@@ -12,9 +12,9 @@ from codecs import open  # To use a consistent encoding
 from setuptools import setup  # Always prefer setuptools over distutils
 
 here = path.abspath(path.dirname(__file__))
-name = 'google_spreadsheet'
-description = 'Google spreadsheet create/update util'
-url = 'https://github.com/pahaz/google-spreadsheets-api'
+name = 'py3line'
+description = 'UNIX command-line tool for python line-based stream processing'
+url = 'https://github.com/pahaz/py3line'
 ppa = 'https://pypi.python.org/packages/source/s/{0}/{0}-'.format(name)
 
 # Get the long description from the README file
@@ -64,9 +64,6 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
     ],
@@ -89,8 +86,6 @@ setup(
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
     install_requires=[
-        'oauth2client>=2.2.0',
-        'google-api-python-client>=1.5.1',
     ],
 
     # List additional groups of dependencies here (e.g. development
