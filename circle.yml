@@ -5,6 +5,8 @@ dependencies:
     - pip install -U ipdb
     - pip install coveralls
     - pip install docutils
+    - pip install check-manifest
+    - pip install Pygments
     - pip install bashtest
 
 test:
