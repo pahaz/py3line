@@ -6,6 +6,19 @@ file4.sh
 <BLANKLINE>
 <EXITCODE=0>
 
+$ find ./testsuit/list-directory | ./py3line.py 'os.path.isdir(x)'
+./testsuit/list-directory
+<BLANKLINE>
+<EXITCODE=0>
+
+$ find ./testsuit/list-directory | ./py3line.py 'os.path.isfile(x) and os.path.basename(x)'
+file1
+file2.txt
+file3.py
+file4.sh
+<BLANKLINE>
+<EXITCODE=0>
+
 $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split()" -a "len(x)"
 2
 1
@@ -20,6 +33,28 @@ $ echo -e "10\n21\n22\n94\n5\n6" | ./py3line.py 'int(x)' -a 'x % 2 == 0' -a 'x, 
 6 is even!
 <BLANKLINE>
 <EXITCODE=0>
+
+$ echo -e "z10\na21\na22\nz94\ni5\nk6" | ./py3line.py 're.match("^z", x) and x'
+z10
+z94
+<BLANKLINE>
+<EXITCODE=0>
+
+$ echo -e "z10\na21\na22\nz94\ni5\nk6" | ./py3line.py 're.fullmatch(r"^z\d+?0$", x) and x'
+z10
+<BLANKLINE>
+<EXITCODE=0>
+
+$ echo -e "1\n2\n2\n4\n1\n6" | ./py3line.py 'set(xx)' -a 'sorted(xx)'
+1
+2
+4
+6
+<BLANKLINE>
+<EXITCODE=0>
+
+$ cat ./testsuit/test.txt | ./py3line.py "len(set(xx))"
+8
 
 $ ls -l1 ./testsuit/list-directory/ | ./py3line.py 'sh("wc", "-l", "./testsuit/list-directory/" + x)'
        2 ./testsuit/list-directory/file1

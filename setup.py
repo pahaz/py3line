@@ -9,6 +9,7 @@ import re
 from os import path
 from codecs import open  # To use a consistent encoding
 
+import sys
 from setuptools import setup  # Always prefer setuptools over distutils
 
 here = path.abspath(path.dirname(__file__))
@@ -24,6 +25,9 @@ with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
 with open(path.join(here, name + '.py'), encoding='utf-8') as f:
     data = f.read()
     version = eval(re.search("__version__[ ]*=[ ]*([^\r\n]+)", data).group(1))
+
+if sys.version_info[0] != 3:
+    raise RuntimeError("Only python 3.x is supported")
 
 setup(
     name=name,
