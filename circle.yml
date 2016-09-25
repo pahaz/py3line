@@ -17,5 +17,5 @@ test:
   override:
     - python setup.py check -m -r -s
     - python setup.py build
-    - bashtest --exitcode --no-normalize-whitespace test_*.bashtest
+    - bashtest --exitcode test_*.bashtest
     - bashtest README.rst

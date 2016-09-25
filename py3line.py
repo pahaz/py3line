@@ -6,6 +6,7 @@
 
 import logging
 import os
+import shlex
 import subprocess
 import sys
 import re
@@ -13,7 +14,7 @@ import argparse
 import types
 from pprint import pprint
 
-__version__ = '0.0.2'
+__version__ = '0.0.3'
 NAME = 'py3line'
 logger = logging.getLogger(NAME)
 
@@ -55,7 +56,14 @@ def xx_processor(p_index, reader, action, global_ctx):
     Stream transformation action (Stream based processor)
     """
     xx = reader
-    return eval(action, global_ctx, locals())
+    try:
+        return eval(action, global_ctx, locals())
+    except TypeError as _exc:
+        # fix xx[:3], xx[1:-1], ...
+        if str(_exc) == "'_io.TextIOWrapper' object is not subscriptable":
+            xx = list(xx)
+            return eval(action, global_ctx, locals())
+        raise _exc
 
 
 def parseargs():
@@ -70,8 +78,8 @@ def parseargs():
                         metavar='action',
                         action='append', default=[],
                         help='<python_expression>')
-    parser.add_argument('files', metavar='file', nargs='*',
-                        help='Input file  #default: stdin')
+    # parser.add_argument('files', metavar='file', nargs='*',
+    #                     help='Input file  #default: stdin')
 
     parser.add_argument('-a', '--action',
                         metavar='action',
@@ -82,16 +90,16 @@ def parseargs():
                         action='append', default=[],
                         help='<python_expression>')
 
-    parser.add_argument('-o', '--out', '--output-file',
-                        dest='output', action='store', default='-',
-                        help="Output file  #default: '-' for stdout")
-    parser.add_argument('-i', '--in-place',
-                        dest='is_inplace', action='store_true',
-                        help="Output to editable file")
-    parser.add_argument('--in-place-suffix',
-                        dest='is_inplace_suffix', action='store', default=None,
-                        help="Output to editable file and provide a backup "
-                             "suffix for keeping a copy of the original file")
+    # parser.add_argument('-o', '--out', '--output-file',
+    #                     dest='output', action='store', default='-',
+    #                     help="Output file  #default: '-' for stdout")
+    # parser.add_argument('-i', '--in-place',
+    #                     dest='is_inplace', action='store_true',
+    #                     help="Output to editable file")
+    # parser.add_argument('--in-place-suffix',
+    #                     dest='is_inplace_suffix', action='store', default=None,
+    #                     help="Output to editable file and provide a backup "
+    #                          "suffix for keeping a copy of the original file")
 
     parser.add_argument('-m', '--modules',
                         dest='modules',
@@ -173,7 +181,7 @@ def _process_result(writer, result):
 
 def _process_results(writer, results):
     for result in results:
-        if result is None or result is False:
+        if result is None or result is False or isinstance(result, Exception):
             continue
         elif isinstance(result, list) or isinstance(result, tuple):
             result = ' '.join(map(str, result))
@@ -191,10 +199,16 @@ def main():
         'os': os,
         'sys': sys,
         're': re,
+        'shlex': shlex,
         'pprint': pprint,
-        'sh': lambda *x: subprocess.check_output(x).decode(),
-        'spawn': lambda *x: 0 == subprocess.call(
-            x, stderr=subprocess.STDOUT, stdout=subprocess.DEVNULL),
+        'sh': lambda *x, check=True, stdout=subprocess.PIPE, shell=True, **kwargs: subprocess.run(
+            *x, stdout=stdout, check=check, shell=shell,
+            **kwargs).stdout.decode(),
+        'spawn': lambda *x, **y: 0 == subprocess.call(
+            x, stderr=subprocess.STDOUT, stdout=subprocess.DEVNULL, **y),
+        'STDOUT': subprocess.STDOUT,
+        'PIPE': subprocess.PIPE,
+        'DEVNULL': subprocess.DEVNULL,
     }
 
     if args.version:
