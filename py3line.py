@@ -14,7 +14,7 @@ import argparse
 import types
 from pprint import pprint
 
-__version__ = '0.0.3'
+__version__ = '0.0.4'
 NAME = 'py3line'
 logger = logging.getLogger(NAME)
 
