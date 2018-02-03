@@ -15,8 +15,8 @@ if [ "$?" != "0" ]; then
     exit 2
 fi
 
-VERSION=$(python setup.py --version)
-NAME=$(python setup.py --name)
+VERSION=$(python3 setup.py --version)
+NAME=$(python3 setup.py --name)
 NEXTVERSION=`echo $VERSION | python3 -c "v = input().strip().split('.'); v[-1] = str(int(v[-1]) + 1); print('.'.join(v))"`
 
 git tag -a v$VERSION -m "version $VERSION"
