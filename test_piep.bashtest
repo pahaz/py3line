@@ -1,11 +1,11 @@
-$ echo -e "Here are\nsome\nwords for you." | ./py3line.py 'x.split()' -a 'len(x)'
+$ echo -e "Here are\nsome\nwords for you." | ./py3line.py 'x.split(); len(x)'
 2
 1
 3
 
 <EXITCODE=0>
 
-$ echo -e "1\n2\n3\n4\n5\n6" | ./py3line.py 'int(x)' -a 'x % 2 == 0' -a 'x , "is even!"'
+$ echo -e "1\n2\n3\n4\n5\n6" | ./py3line.py 'int(x); skip if x % 2 else x; x, "is even!"'
 2 is even!
 4 is even!
 6 is even!
@@ -26,7 +26,7 @@ $ echo -e "1\n2\n3\n4\n5\n6" | ./py3line.py 'xx[-3:]'  # `tail`
 
 <EXITCODE=0>
 
-$ echo -e "a\nb\nc\nd\ne\nf" | ./py3line.py 'xx[1:-1]' -a 'x.upper()'  # remove leading and trailing lines, then uppercase
+$ echo -e "a\nb\nc\nd\ne\nf" | ./py3line.py 'xx[1:-1]; x.upper()'  # remove leading and trailing lines, then uppercase
 B
 C
 D
@@ -34,9 +34,9 @@ E
 
 <EXITCODE=0>
 
-$ echo -e "setup.py\nMakefile" | ./py3line.py 'sh("false", check=False) + "line!" + x'
-line!setup.py
-line!Makefile
+$ echo -e "setup.py\nMakefile" | ./py3line.py 'str(run("false").returncode) + "line!" + x'
+1line!setup.py
+1line!Makefile
 
 <EXITCODE=0>
 
