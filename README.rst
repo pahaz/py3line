@@ -98,7 +98,7 @@ The example above can be represented as the following python pseudo-code::
 
 Second example overview ::
 
-    echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split()" -a "len(x)" -a "sum(xx)"
+    echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split(); len(x); sum(xx)"
 
 Here we have stream based action **"sum(xx)"**.
 
@@ -174,7 +174,7 @@ You can use **-m** options for import module::
 
 You also can use **-p** options for run exec some actions before processing::
 
-    ./py3line.py -p "rgx = re.compile(r' is ([A-Z]\w*)')" "rgx.search(x).group(1)"
+    ./py3line.py "rgx = re.compile(r' is ([A-Z]\w*)'); rgx.search(x).group(1)"
 
 Pseudo code example **./py3line.py -m module1 -m module2 -p pre-action1  -p pre-action2 ...** ::
 
@@ -239,14 +239,14 @@ then actions (**-a** option + 1st positional argument).
     whose name is Adam
 
     # Regex matching with groups
-    $ cat ./testsuit/test.txt | ./py3line.py "re.findall(r' is ([A-Z]\w*)', x) or False"
+    $ cat ./testsuit/test.txt | ./py3line.py "re.findall(r' is ([A-Z]\w*)', x) or skip"
     Betty
     Frank
     George
     Adam
 
     # cat ./testsuit/test.txt | ./py3line.py "re.search(r' is ([A-Z]\w*)', x).group(1)"
-    $ cat ./testsuit/test.txt | ./py3line.py -p "rgx = re.compile(r' is ([A-Z]\w*)')" "rgx.search(x).group(1)"
+    $ cat ./testsuit/test.txt | ./py3line.py "rgx = re.compile(r' is ([A-Z]\w*)'); rgx.search(x).group(1)"
     Betty
     Frank
     George
@@ -281,8 +281,16 @@ then actions (**-a** option + 1st positional argument).
     POST /admin/customauth/user/?q=%D0%9F%D0%B0%D1%81%D0%B5%D1%87%D0%BD%D0%B8%D0%BA HTTP/1.1
 
     # Print most common accessed urls and filter accessed more then 5 times
-    $ cat ./testsuit/nginx.log | ./py3line.py -m shlex -m collections  -a "shlex.split(x)[13]" -a "collections.Counter(xx).most_common()" "x[1] > 5 and x[0]"
+    $ cat ./testsuit/nginx.log | ./py3line.py -m shlex -m collections "shlex.split(x)[13]; collections.Counter(xx).most_common(); x[1] > 5 and x[0]"
     HEAD / HTTP/1.0
+
+Examples
+--------
+
+    # create directory tree
+    echo -e "y1\nx2\nz3" | py3line -m pathlib "pathlib.Path('/DATA/' + x +'/db-backup/').mkdir(parents=True, exist_ok=True)"
+
+    
 
 
 HELP
