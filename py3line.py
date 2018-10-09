@@ -11,18 +11,24 @@ import subprocess
 import sys
 import re
 import argparse
+import tokenize
 import types
+import pathlib
+import time
+import datetime
+from io import BytesIO
 from pprint import pprint
 
-__version__ = '0.0.4'
+__version__ = '0.0.5'
 NAME = 'py3line'
 logger = logging.getLogger(NAME)
+skip = object()
 
 if sys.version_info[0] != 3:
     raise RuntimeError("Only python 3.x is supported")
 
 
-def x_processor(p_index, reader, action, global_ctx):
+def x_processor(reader, index, expr, compiled_expr, global_ctx):
     """
     Line based action processor
     """
@@ -30,76 +36,52 @@ def x_processor(p_index, reader, action, global_ctx):
         if isinstance(x, str) and x.endswith('\n'):
             x = x[:-1]
 
-        # * if the result of any linewise expression is a boolean or None,
-        #   it acts as a filter for that line (like grep)
-        # * if the result of any linewise expression is a callable object,
-        #   it will be passed the current value as the new value of line.
         try:
-            result = eval(action, global_ctx, locals())
-        except Exception as e:
-            result = e
-            logger.info("processor %d: error: %r x=%r, i=%d", p_index, e, x, i)
+            result = eval(compiled_expr, global_ctx, locals())
+        except Exception as exc:
+            logger.info("EXPR[%d]: %r, LINE[%d]: %r, ERROR: %r",
+                        index, expr, i, x, exc)
             continue
 
-        if result is None or result is False:
-            logger.debug("processor %d: skip x=%r, i=%d", p_index, x, i)
+        if result is skip:
+            logger.debug("EXPR[%d]: %r, LINE[%d]: %r, SKIP",
+                         index, expr, i, x)
             continue
-        if result is True:
-            result = x
 
-        logger.debug("processor %d: -> %r x=%r, i=%d", p_index, result, x, i)
+        logger.debug("EXPR[%d]: %r, LINE[%d]: %r => %r",
+                     index, expr, i, x, result)
         yield result
 
 
-def xx_processor(p_index, reader, action, global_ctx):
+def xx_processor(reader, index, expr, compiled_expr, global_ctx):
     """
     Stream transformation action (Stream based processor)
     """
     xx = reader
     try:
-        return eval(action, global_ctx, locals())
+        result = eval(compiled_expr, global_ctx, locals())
     except TypeError as _exc:
         # fix xx[:3], xx[1:-1], ...
-        if str(_exc) == "'_io.TextIOWrapper' object is not subscriptable":
+        if str(_exc).find("object is not subscriptable") != -1:
+            logger.debug("EXPR[%d]: %r MEMORIZE STREAM", index, expr)
             xx = list(xx)
-            return eval(action, global_ctx, locals())
-        raise _exc
+            result = eval(compiled_expr, global_ctx, locals())
+        else:
+            raise _exc
+    logger.debug("EXPR[%d]: %r => %r", index, expr, result)
+    return result
 
 
 def parseargs():
     description = (
-        "Py3line is a UNIX command-line tool for line-based processing "
-        "in Python with regex and output transform features "
-        "similar to grep, sed, and awk."
+        "Py3line is a UNIX command-line tool for a simple text stream "
+        "processing by the Python one-liner scripts. Like grep, sed and awk."
     )
 
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument('action',
-                        metavar='action',
-                        action='append', default=[],
+    parser.add_argument('expressions',
+                        metavar='expression', nargs='+',
                         help='<python_expression>')
-    # parser.add_argument('files', metavar='file', nargs='*',
-    #                     help='Input file  #default: stdin')
-
-    parser.add_argument('-a', '--action',
-                        metavar='action',
-                        action='append', default=[],
-                        help='<python_expression>')
-    parser.add_argument('-p', '--pre-action',
-                        metavar='pre_action',
-                        action='append', default=[],
-                        help='<python_expression>')
-
-    # parser.add_argument('-o', '--out', '--output-file',
-    #                     dest='output', action='store', default='-',
-    #                     help="Output file  #default: '-' for stdout")
-    # parser.add_argument('-i', '--in-place',
-    #                     dest='is_inplace', action='store_true',
-    #                     help="Output to editable file")
-    # parser.add_argument('--in-place-suffix',
-    #                     dest='is_inplace_suffix', action='store', default=None,
-    #                     help="Output to editable file and provide a backup "
-    #                          "suffix for keeping a copy of the original file")
 
     parser.add_argument('-m', '--modules',
                         dest='modules',
@@ -131,12 +113,13 @@ def _setup_logger(args):
         )
         logger.addHandler(console_handler)
 
-    if not args.quiet:
-        logger.setLevel(logging.WARN)
+    if args.quiet:
+        logger.setLevel(logging.CRITICAL)
+    else:
         if args.verbose:
             logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(logging.ERROR)
+        else:
+            logger.setLevel(logging.WARN)
 
     # capture_warnings
     logging.captureWarnings(True)
@@ -144,30 +127,90 @@ def _setup_logger(args):
     pywarnings.handlers.extend(logger.handlers)
 
 
-def _import_modules(args, global_ctx):
-    for m in args.modules:
-        global_ctx[m] = __import__(m, global_ctx, global_ctx)
+def _split_expressions(exprs):
+    """
+    >>> _split_expressions(["x.split()"])
+    ([], ['x.split()'], [], [])
+    >>> _split_expressions(["xxx = re.compile('[a-z]')"])
+    (["xxx = re.compile('[a-z]')"], [], [], [])
+    >>> _split_expressions(["x.split()", "xxx = re.compile('[a-z]')"])
+    (["xxx = re.compile('[a-z]')"], ['x.split()'], ["xxx = re.compile('[a-z]')"], [])
+    >>> _split_expressions(["int(x) - 1", "sum(xx)"])
+    ([], ['int(x) - 1', 'sum(xx)'], [], [])
+    >>> _split_expressions(["int(x) - 1", "import xxx"])
+    (['import xxx'], ['int(x) - 1'], ['import xxx'], ['import xxx'])
+    >>> _split_expressions(["import xxx"])
+    (['import xxx'], [], [], ['import xxx'])
+    >>> _split_expressions(["int(x)", "sum(xx)", "x = 1"])
+    ([], ['int(x)', 'sum(xx)', 'x = 1'], [], [])
+    >>> _split_expressions(['y', 'y.w()', 'import xxx'])
+    (['y', 'y.w()', 'import xxx'], [], [], ['import xxx'])
+    """
+    pre_actions = []
+    stream_actions = []
+    warn_pre_actions = []
+    warn_imports = []
+
+    stream_markers = ['i', 'x', 'xx']
+    for expr in exprs:
+        tokens = tokenize.tokenize(BytesIO(expr.encode('utf-8')).readline)
+        is_stream = any(
+            (token.type == tokenize.NAME and
+             any(marker == token.string for marker in stream_markers))
+            for token in tokens
+        )
+        if is_stream:
+            stream_actions.append(expr)
+        else:
+            pre_actions.append(expr)
+
+            if stream_actions:
+                warn_pre_actions.append(expr)
+
+        if expr.startswith('import '):
+            warn_imports.append(expr)
+
+    return pre_actions, stream_actions, warn_pre_actions, warn_imports
 
 
-def _pre_actions(args, global_ctx):
-    pre_actions = [compile(x.strip(), NAME, 'exec') for x in args.pre_action]
-    for action in pre_actions:
-        exec(action, global_ctx, global_ctx)
+def _import_modules(modules, global_ctx):
+    for i, module in enumerate(modules):
+        try:
+            global_ctx[module] = __import__(module, global_ctx, global_ctx)
+        except Exception as exc:
+            logger.error("IMPORT[%d]: %r, ERROR: %r", i, module, exc)
+            raise
 
 
-def _get_actions(args):
-    return [compile(x.strip() or 'x', NAME, 'eval') for x in args.action]
+def _pre_actions(pre_exprs, global_ctx):
+    for i, expr in enumerate(pre_exprs):
+        try:
+            compiled_expr = compile(expr, NAME, 'exec')
+            exec(compiled_expr, global_ctx, global_ctx)
+        except Exception as exc:
+            logger.error("EXPR[%d]: %r, ERROR: %r", i, expr, exc)
+            raise
 
 
-def _get_input_output_pairs(args):
-    for i, o in zip(['-'], ['-']):
-        i = sys.stdin if i == '-' else open(i)
-        o = sys.stdout if o == '-' else open(o, mode='w')
-        yield i, o
+def _get_actions(exprs):
+    actions = []
+    for i, expr in enumerate(exprs):
+        try:
+            tokens = tokenize.tokenize(BytesIO(expr.encode('utf-8')).readline)
+            is_full_stream_processor = any(
+                (token.type == tokenize.NAME and token.string == 'xx')
+                for token in tokens)
+            compiled_expr = compile(expr, NAME, 'eval')
+            actions.append((i, expr, compiled_expr, is_full_stream_processor))
+        except Exception as exc:
+            logger.error("EXPR[%d]: %r, ERROR: %r", i, expr, exc)
+            raise
+    return actions
 
 
 def _process_result(writer, result):
-    if result is None or result is False:
+    is_stdin = result is sys.stdin
+    if result is None or result is False or result is skip or is_stdin:
         return
     elif isinstance(result, list) or isinstance(result, tuple):
         result = ' '.join(map(str, result))
@@ -181,7 +224,8 @@ def _process_result(writer, result):
 
 def _process_results(writer, results):
     for result in results:
-        if result is None or result is False or isinstance(result, Exception):
+        if result is None or result is False or result is skip or \
+                isinstance(result, Exception):
             continue
         elif isinstance(result, list) or isinstance(result, tuple):
             result = ' '.join(map(str, result))
@@ -191,50 +235,75 @@ def _process_results(writer, results):
             result += '\n'
 
         writer.write(result)
+        # print(result, file=writer)
+
+
+def global_run(*x, stdout=subprocess.PIPE, check=False, shell=True, **kwargs):
+    return subprocess.run(
+        *x, stdout=stdout, check=check, shell=shell,
+        **kwargs)
+
+
+def global_sh(*x, stdout=subprocess.PIPE, check=False, shell=True, **kwargs):
+    result = global_run(*x, stdout=stdout, check=check, shell=shell, **kwargs)
+    return result.stdout.decode() if result.returncode == 0 else skip
 
 
 def main():
     args = parseargs()
+    _setup_logger(args)
+    logger.debug('arguments: %r', args)
+
+    expressions = [
+        z.strip() for x in args.expressions
+        for z in x.split(';') if z.strip()]
+    modules = [
+        z.strip() for x in args.modules
+        for z in x.split(',') if z.strip()]
+    pre_actions, stream_actions, warn_pre_actions, warn_imports = \
+        _split_expressions(expressions)
+
+    if warn_pre_actions:
+        pre_no_imports = [x for x in pre_actions if x not in warn_imports]
+        command = "; ".join(warn_imports + pre_no_imports + stream_actions)
+        m_command = " -m " + repr(','.join(modules)) if modules else ''
+        logger.warning("use command: %s%s %r", sys.argv[0], m_command, command)
+    if args.version:
+        print(__version__)
+        return 0
+
     global_ctx = {
+        'skip': skip,
         'os': os,
         'sys': sys,
         're': re,
         'shlex': shlex,
         'pprint': pprint,
-        'sh': lambda *x, check=True, stdout=subprocess.PIPE, shell=True, **kwargs: subprocess.run(
-            *x, stdout=stdout, check=check, shell=shell,
-            **kwargs).stdout.decode(),
-        'spawn': lambda *x, **y: 0 == subprocess.call(
-            x, stderr=subprocess.STDOUT, stdout=subprocess.DEVNULL, **y),
+        'run': global_run,
+        'sh': global_sh,
         'STDOUT': subprocess.STDOUT,
         'PIPE': subprocess.PIPE,
         'DEVNULL': subprocess.DEVNULL,
     }
 
-    if args.version:
-        print(__version__)
-        return 0
+    try:
+        _import_modules(modules, global_ctx)
+        _pre_actions(pre_actions, global_ctx)
+    except Exception:
+        logger.error('exit(1)')
+        return 1
 
-    _setup_logger(args)
-    logger.debug('arguments: %r', args)
+    reader, writer = sys.stdin, sys.stdout
+    actions = _get_actions(stream_actions)
+    for i, expr, compiled_expr, is_full_stream_processor in actions:
+        processor = xx_processor if is_full_stream_processor else x_processor
+        reader = processor(reader, i, expr, compiled_expr, global_ctx)
 
-    _import_modules(args, global_ctx)
-    _pre_actions(args, global_ctx)
-    actions = _get_actions(args)
-    pairs = _get_input_output_pairs(args)
-    index = 0
-    for reader, writer in pairs:
-        for action in actions:
-            index += 1
-            processor = x_processor if 'xx' not in action.co_names \
-                else xx_processor
-            reader = processor(index - 1, reader, action, global_ctx)
-
-        results = reader
-        if isinstance(results, types.GeneratorType):
-            _process_results(writer, results)
-        else:
-            _process_result(writer, results)
+    results = reader
+    if isinstance(results, types.GeneratorType):
+        _process_results(writer, results)
+    else:
+        _process_result(writer, results)
 
     return 0
 
