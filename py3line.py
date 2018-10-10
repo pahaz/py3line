@@ -34,9 +34,6 @@ def x_processor(reader, index, expr, compiled_expr, global_ctx):
     Line based action processor
     """
     for i, x in enumerate(reader):
-        if isinstance(x, str) and x.endswith('\n'):
-            x = x[:-1]
-
         try:
             result = eval(compiled_expr, global_ctx, locals())
         except Exception as exc:
@@ -68,9 +65,17 @@ def xx_processor(reader, index, expr, compiled_expr, global_ctx):
             xx = list(xx)
             result = eval(compiled_expr, global_ctx, locals())
         else:
+            logger.error("EXPR[%d]: %r, ERROR: %r", index, expr, _exc)
             raise _exc
     logger.debug("EXPR[%d]: %r => %r", index, expr, result)
     return result
+
+
+def pre_processor(reader):
+    for x in reader:
+        if x.endswith('\n'):
+            x = x[:-1]
+        yield x
 
 
 def parseargs():
@@ -210,33 +215,17 @@ def _get_actions(exprs):
 
 
 def _process_result(writer, result):
-    is_stdin = result is sys.stdin
-    if result is None or result is False or result is skip or is_stdin:
+    if result is skip:
         return
-    elif isinstance(result, list) or isinstance(result, tuple):
-        result = ' '.join(map(str, result))
+    elif isinstance(result, (list, tuple, types.GeneratorType)):
+        print(*result, file=writer)
     else:
-        result = str(result)
-    if not result.endswith('\n'):
-        result += '\n'
-
-    writer.write(result)
+        print(result, file=writer)
 
 
 def _process_results(writer, results):
     for result in results:
-        if result is None or result is False or result is skip or \
-                isinstance(result, Exception):
-            continue
-        elif isinstance(result, list) or isinstance(result, tuple):
-            result = ' '.join(map(str, result))
-        else:
-            result = str(result)
-        if not result.endswith('\n'):
-            result += '\n'
-
-        writer.write(result)
-        # print(result, file=writer)
+        _process_result(writer, result)
 
 
 def global_run(*x, stdout=subprocess.PIPE, check=False, shell=True, **kwargs):
@@ -294,17 +283,17 @@ def main():
         logger.error('exit(1)')
         return 1
 
-    reader, writer = sys.stdin, sys.stdout
+    in_stream, output = pre_processor(sys.stdin), sys.stdout
     actions = _get_actions(stream_actions)
     for i, expr, compiled_expr, is_full_stream_processor in actions:
         processor = xx_processor if is_full_stream_processor else x_processor
-        reader = processor(reader, i, expr, compiled_expr, global_ctx)
+        in_stream = processor(in_stream, i, expr, compiled_expr, global_ctx)
 
-    results = reader
+    results = in_stream
     if isinstance(results, Iterable):
-        _process_results(writer, results)
+        _process_results(output, results)
     else:
-        _process_result(writer, results)
+        _process_result(output, results)
 
     return 0
 
