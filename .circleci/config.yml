@@ -1,8 +1,8 @@
 version: 2
 jobs:
   test:
-    macos:
-      xcode: "9.4.1"
+    docker:
+      - image: python:3.6
     steps:
     - checkout
     - run:
@@ -25,26 +25,9 @@ jobs:
             bashtest --exitcode test_*.bashtest
             bashtest README.rst
 
-  build-osx-binary:
-    macos:
-      xcode: "9.4.1"
-    steps:
-      - checkout
-      - run:
-          name: upgrade python tools
-          command: sudo pip install --upgrade pip virtualenv
-      - run:
-         name: setup script
-         command: DEPLOYMENT_TARGET=10.11 ./.circleci/osx_setup.sh
-      - run:
-         name: build script
-         command: ./.circleci/osx_build.sh
-      - store_artifacts:
-          path: dist/docker-compose-Darwin-x86_64
-          destination: docker-compose-Darwin-x86_64
   build-linux-binary:
-    machine:
-      enabled: true
+    docker:
+      - image: python:3.6
     steps:
       - checkout
       - run:
@@ -60,4 +43,3 @@ workflows:
     jobs:
       - test
       - build-linux-binary
-      - build-osx-binary
