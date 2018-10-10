@@ -13,6 +13,7 @@ jobs:
             pip install --upgrade tox==2.1.1
             pip install -U pip
             pip install -U ipdb
+            pip install virtualenv
             pip install coveralls
             pip install docutils
             pip install check-manifest
