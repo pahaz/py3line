@@ -58,7 +58,7 @@ $ cat ./testsuit/test.txt | ./py3line.py "len(set(xx))"
 
 <EXITCODE=0>
 
-$ ls -l1 ./testsuit/list-directory/ | ./py3line.py 'sh("wc -l ./testsuit/list-directory/" + x)'
+$ ls -1 ./testsuit/list-directory/ | ./py3line.py 'sh("wc -l ./testsuit/list-directory/" + x)'
        2 ./testsuit/list-directory/file1
        6 ./testsuit/list-directory/file2.txt
        2 ./testsuit/list-directory/file3.py
@@ -66,15 +66,15 @@ $ ls -l1 ./testsuit/list-directory/ | ./py3line.py 'sh("wc -l ./testsuit/list-di
 
 <EXITCODE=0>
 
-$ ls -l1 ./testsuit/list-directory/ | ./py3line.py 'sh("false && echo " + x)'
+$ ls -1 ./testsuit/list-directory/ | ./py3line.py 'sh("false && echo " + x)'
 
 <EXITCODE=0>
 
-$ ls -l1 ./testsuit/list-directory/ | ./py3line.py 'sh("false")'
+$ ls -1 ./testsuit/list-directory/ | ./py3line.py 'sh("false")'
 
 <EXITCODE=1>
 
-$ ls -l1 ./testsuit/list-directory/ | ./py3line.py 'sh("wc -l ./testsuit/list-directory/" + x); x.strip()'
+$ ls -1 ./testsuit/list-directory/ | ./py3line.py 'sh("wc -l ./testsuit/list-directory/" + x); x.strip()'
 2 ./testsuit/list-directory/file1
 6 ./testsuit/list-directory/file2.txt
 2 ./testsuit/list-directory/file3.py
@@ -82,7 +82,7 @@ $ ls -l1 ./testsuit/list-directory/ | ./py3line.py 'sh("wc -l ./testsuit/list-di
 <BLANKLINE>
 <EXITCODE=0>
 
-$ ls -l1 ./testsuit/ | ./py3line.py 'sh("test -f ./testsuit/" + x + "&& echo " + x)'
+$ ls -1 ./testsuit/ | ./py3line.py 'sh("test -f ./testsuit/" + x + "&& echo " + x)'
 nginx.log
 test.txt
 <BLANKLINE>
