@@ -71,8 +71,7 @@ $ ls -1 ./testsuit/list-directory/ | ./py3line.py 'sh("false && echo " + x)'
 <EXITCODE=0>
 
 $ ls -1 ./testsuit/list-directory/ | ./py3line.py 'sh("false")'
-
-<EXITCODE=1>
+<EXITCODE=0>
 
 $ ls -1 ./testsuit/list-directory/ | ./py3line.py 'sh("wc -l ./testsuit/list-directory/" + x); x.strip()'
 2 ./testsuit/list-directory/file1
