@@ -16,10 +16,11 @@ import types
 import pathlib
 import time
 import datetime
+from collections import Iterable
 from io import BytesIO
 from pprint import pprint
 
-__version__ = '0.0.5'
+__version__ = '0.1.0'
 NAME = 'py3line'
 logger = logging.getLogger(NAME)
 skip = object()
@@ -300,7 +301,7 @@ def main():
         reader = processor(reader, i, expr, compiled_expr, global_ctx)
 
     results = reader
-    if isinstance(results, types.GeneratorType):
+    if isinstance(results, Iterable):
         _process_results(writer, results)
     else:
         _process_result(writer, results)
