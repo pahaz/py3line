@@ -1,0 +1,63 @@
+version: 2
+jobs:
+  test:
+    macos:
+      xcode: "9.4.1"
+    steps:
+    - checkout
+    - run:
+        name: install tox
+        command: |
+            pip -V
+            sudo pip install --upgrade tox==2.1.1
+            sudo pip install -U pip
+            sudo pip install -U ipdb
+            sudo pip install coveralls
+            sudo pip install docutils
+            sudo pip install check-manifest
+            sudo pip install Pygments
+            sudo pip install bashtest
+    - run:
+        name: unit tests
+        command: |
+            python setup.py check -m -r -s
+            python setup.py build
+            bashtest --exitcode test_*.bashtest
+            bashtest README.rst
+
+  build-osx-binary:
+    macos:
+      xcode: "9.4.1"
+    steps:
+      - checkout
+      - run:
+          name: upgrade python tools
+          command: sudo pip install --upgrade pip virtualenv
+      - run:
+         name: setup script
+         command: DEPLOYMENT_TARGET=10.11 ./.circleci/osx_setup.sh
+      - run:
+         name: build script
+         command: ./.circleci/osx_build.sh
+      - store_artifacts:
+          path: dist/docker-compose-Darwin-x86_64
+          destination: docker-compose-Darwin-x86_64
+  build-linux-binary:
+    machine:
+      enabled: true
+    steps:
+      - checkout
+      - run:
+          name: build Linux binary
+          command: ./.circleci/linux_build.sh
+      - store_artifacts:
+          path: dist/docker-compose-Linux-x86_64
+          destination: docker-compose-Linux-x86_64
+
+workflows:
+  version: 2
+  all:
+    jobs:
+      - test
+      - build-linux-binary
+      - build-osx-binary
