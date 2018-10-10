@@ -56,12 +56,12 @@ Lets start with two simple examples:
 
 .. code-block:: bash
 
-    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split()" -a "len(x)"
+    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split(); len(x)"
     2
     1
     3
 
-    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split()" -a "len(x)" -a "sum(xx)"
+    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split(); len(x); sum(xx)"
     6
 
 How it works?
@@ -74,7 +74,7 @@ an action **over the stream**.
 
 First example overview ::
 
-    echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split()" -a "len(x)"
+    echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split(); len(x)"
 
  * **echo -e "Here are\nsome\nwords for you."** -- create an input stream data consists of three lines
  * **|** -- pipeline input stream to py3line
@@ -126,13 +126,13 @@ What is order actions?
 
 This commands are equal::
 
-    ./py3line.py "x.split()" -a "len(x)" -a "sum(xx)"
-    ./py3line.py -a "x.split()" "len(x)" -a "sum(xx)"
-    ./py3line.py -a "x.split()" -a "len(x)" "sum(xx)"
+    ./py3line.py "x.split(); len(x); sum(xx)"
+    ./py3line.py "x.split()" "len(x)" "sum(xx)"
+    ./py3line.py "x.split(); len(x)" 'sum(xx)'
 
 But we recommend use::
 
-    ./py3line.py "x.split()" -a "len(x)" -a "sum(xx)"
+    ./py3line.py "x.split(); len(x); sum(xx)"
 
 as the right actions ordering.
 
@@ -207,6 +207,8 @@ then actions (**-a** option + 1st positional argument).
     This is my goat,
      whose name is Adam.
 
+.. code-block:: bash
+
     # Number every line
     $ cat ./testsuit/test.txt | ./py3line.py "i, x"
     0 This is my cat,
@@ -217,6 +219,8 @@ then actions (**-a** option + 1st positional argument).
     5  whose name is George.
     6 This is my goat,
     7  whose name is Adam.
+
+.. code-block:: bash
 
     # Print every first and last word
     $ cat ./testsuit/test.txt | ./py3line.py "x.split()[0], x.split()[-1]"
@@ -229,6 +233,8 @@ then actions (**-a** option + 1st positional argument).
     This goat,
     whose Adam.
 
+.. code-block:: bash
+
     # Split into words and print (strip al non word char like comma, dot, etc)
     $ cat ./testsuit/test.txt | ./py3line.py "re.findall(r'\w+', x)"
     This is my cat
@@ -240,12 +246,16 @@ then actions (**-a** option + 1st positional argument).
     This is my goat
     whose name is Adam
 
+.. code-block:: bash
+
     # Regex matching with groups
     $ cat ./testsuit/test.txt | ./py3line.py "re.findall(r' is ([A-Z]\w*)', x) or skip"
     Betty
     Frank
     George
     Adam
+
+.. code-block:: bash
 
     # cat ./testsuit/test.txt | ./py3line.py "re.search(r' is ([A-Z]\w*)', x).group(1)"
     $ cat ./testsuit/test.txt | ./py3line.py "rgx = re.compile(r' is ([A-Z]\w*)'); rgx.search(x).group(1)"
@@ -254,12 +264,16 @@ then actions (**-a** option + 1st positional argument).
     George
     Adam
 
+.. code-block:: bash
+
     ## Original Examples
     # Print out the first 20 characters of every line
     # cat ./testsuit/test.txt | ./py3line.py "i < 2"
     $ cat ./testsuit/test.txt | ./py3line.py "list(xx)[:2]"
     This is my cat,
      whose name is Betty.
+
+.. code-block:: bash
 
     # Print just the URLs in the access log
     $ cat ./testsuit/nginx.log | ./py3line.py -m shlex "shlex.split(x)[13]"
@@ -282,6 +296,8 @@ then actions (**-a** option + 1st positional argument).
     GET /login/?next=/ HTTP/1.1
     POST /admin/customauth/user/?q=%D0%9F%D0%B0%D1%81%D0%B5%D1%87%D0%BD%D0%B8%D0%BA HTTP/1.1
 
+.. code-block:: bash
+
     # Print most common accessed urls and filter accessed more then 5 times
     $ cat ./testsuit/nginx.log | ./py3line.py -m shlex -m collections "shlex.split(x)[13]; collections.Counter(xx).most_common(); x[1] > 5 and x[0]"
     HEAD / HTTP/1.0
@@ -291,8 +307,6 @@ Examples
 
     # create directory tree
     echo -e "y1\nx2\nz3" | py3line -m pathlib "pathlib.Path('/DATA/' + x +'/db-backup/').mkdir(parents=True, exist_ok=True)"
-
-    
 
 
 HELP
