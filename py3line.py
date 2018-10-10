@@ -2,7 +2,7 @@
 
 # updated 2005.07.21, thanks to Jacob Oscarson
 # updated 2006.03.30, thanks to Mark Eichin
-# updated 2016.07.19, thanks to Pahaz Blinov
+# updated 2016.07.19, thanks to Pahaz White
 
 import logging
 import os

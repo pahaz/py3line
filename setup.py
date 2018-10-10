@@ -46,7 +46,7 @@ setup(
 
     # Author details
     author='Pahaz Blinov',
-    author_email='pahaz.blinov@gmail.com',
+    author_email='pahaz.white@gmail.com',
 
     # Choose your license
     license='MIT',
