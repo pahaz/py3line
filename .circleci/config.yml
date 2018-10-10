@@ -7,19 +7,19 @@ jobs:
     steps:
     - checkout
     - run:
-        name: install tox
+        name: install
         command: |
             pip -V
-            sudo pip install --upgrade tox==2.1.1
-            sudo pip install -U pip
-            sudo pip install -U ipdb
-            sudo pip install coveralls
-            sudo pip install docutils
-            sudo pip install check-manifest
-            sudo pip install Pygments
-            sudo pip install bashtest
+            pip install --upgrade tox==2.1.1
+            pip install -U pip
+            pip install -U ipdb
+            pip install coveralls
+            pip install docutils
+            pip install check-manifest
+            pip install Pygments
+            pip install bashtest
     - run:
-        name: unit tests
+        name: tests
         command: |
             python setup.py check -m -r -s
             python setup.py build
@@ -29,6 +29,7 @@ jobs:
   build-linux-binary:
     docker:
       - image: python:3.6
+    working_directory: ~/repo
     steps:
       - checkout
       - run:
