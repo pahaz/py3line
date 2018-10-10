@@ -80,7 +80,7 @@ def parseargs():
 
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('expressions',
-                        metavar='expression', nargs='+',
+                        metavar='expression', nargs='*',
                         help='<python_expression>')
 
     parser.add_argument('-m', '--modules',

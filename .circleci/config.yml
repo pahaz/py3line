@@ -50,8 +50,8 @@ jobs:
           name: build Linux binary
           command: ./.circleci/linux_build.sh
       - store_artifacts:
-          path: dist/docker-compose-Linux-x86_64
-          destination: docker-compose-Linux-x86_64
+          path: dist/py3line-Linux-x86_64
+          destination: py3line-Linux-x86_64
 
 workflows:
   version: 2
