@@ -1,31 +1,33 @@
-**Author**: `Pahaz Blinov`_
+**Author**: `Pahaz White`_
 
 **Repo**: https://github.com/pahaz/py3line/
 
-Pyline is a UNIX command-line tool for line-based processing
-in Python with regex and output transform features
-similar to grep, sed, and awk.
+Pyline is a UNIX command-line tool for bash one-liner scripts.
+It's python line alternative to `grep`, `sed`, and `awk`.
 
 This project inspired by: `piep`_, `pysed`_, `pyline`_, `pyp`_ and
 `Jacob+Mark recipe <https://code.activestate.com/recipes/437932-pyline-a-grep-like-sed-like-command-line-tool/>`_
 
-**requirements**: Python3
-
 **WHY I MAKE IT?**
 
-I sometimes have to use `sed` / `awk`.
-Not often, and so I always forget the necessary options and `sed` / `awk` DSL.
-But I now python, I like it, and I want use it for data processing.
-Default `python -c` is hard to write the kind of one-liner that works well.
+Sometimes, I have to use `sed` / `awk` / `grep`. Usually for simple text
+processing. Find some pattern inside the text file using Python regexp,
+or comment/uncomment some config line by bash one line command.
+
+I always forget the necessary options and `sed` / `awk` DSL.
+But I now python, I like it, and I want use it for this simple bash tasks.
+Default `python -c` is not enough to write readable bash one-liners.
 
 Why not a `pyline`?
  * Don`t support python3
- * Have many options (I want as much simple as possible solution)
- * Bad performance
+ * Have many options
  * Don`t support command chaining
 
-Why not a `pysed`?
- *
+**PRINCIPLES**
+
+ * AS MUCH SIMPLE TO UNDERSTAND BASH ONE LINER SCRIPT AS POSSIBLE
+ * AS MUCH EASY TO INSTALL AS POSSIBLE
+ * AS MUCH SMALL CODEBASE AS POSSIBLE
 
 Installation
 ============
@@ -329,7 +331,7 @@ HELP
       --version             Print the version string
 
 
-.. _Pahaz Blinov: https://github.com/pahaz/
+.. _Pahaz White: https://github.com/pahaz/
 .. _py3line: https://pypi.python.org/pypi/py3line/
 .. _pyp: https://pypi.python.org/pypi/pyp/
 .. _piep: https://github.com/timbertson/piep/tree/master/piep/
