@@ -34,13 +34,13 @@ $ echo -e "10\n21\n22\n94\n5\n6" | ./py3line.py 'int(x); skip if x % 2 else x; x
 
 <EXITCODE=0>
 
-$ echo -e "z10\na21\na22\nz94\ni5\nk6" | ./py3line.py 're.match("^z", x) and x'
+$ echo -e "z10\na21\na22\nz94\ni5\nk6" | ./py3line.py 'x if re.match("^z", x) else skip'
 z10
 z94
 
 <EXITCODE=0>
 
-$ echo -e "z10\na21\na22\nz94\ni5\nk6" | ./py3line.py 're.fullmatch(r"^z\d+?0$", x) and x'
+$ echo -e "z10\na21\na22\nz94\ni5\nk6" | ./py3line.py 'x if re.fullmatch(r"^z\d+?0$", x) else skip'
 z10
 
 <EXITCODE=0>

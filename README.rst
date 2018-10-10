@@ -299,7 +299,7 @@ then actions (**-a** option + 1st positional argument).
 .. code-block:: bash
 
     # Print most common accessed urls and filter accessed more then 5 times
-    $ cat ./testsuit/nginx.log | ./py3line.py -m shlex -m collections "shlex.split(x)[13]; collections.Counter(xx).most_common(); x[1] > 5 and x[0]"
+    $ cat ./testsuit/nginx.log | ./py3line.py -m shlex -m collections "shlex.split(x)[13]; collections.Counter(xx).most_common(); x[0] if x[1] > 5 else skip"
     HEAD / HTTP/1.0
 
 Examples
