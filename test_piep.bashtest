@@ -44,3 +44,20 @@ $ echo -e "echo true\nfalse" | ./py3line.py 'sh(x) or "(failed)"'
 true
 
 <EXITCODE=0>
+
+$ echo -e "2\n4" | ./py3line.py 'int(x); range(0, x) ; repr(x)'
+[0, 1]
+[0, 1, 2, 3]
+
+<EXITCODE=0>
+
+# If you wanted each number to come on its own line
+$ echo -e "2\n4" | ./py3line.py -m itertools 'int(x); range(0, x); itertools.chain.from_iterable(xx)'
+0
+1
+0
+1
+2
+3
+
+<EXITCODE=0>
