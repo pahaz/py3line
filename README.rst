@@ -53,7 +53,7 @@ For installing from source, clone the
 Tutorial
 ========
 
-Lets start with two simple examples:
+Lets start with examples, we want to evaluate a number of words in each line:
 
 .. code-block:: bash
 
@@ -62,28 +62,13 @@ Lets start with two simple examples:
     1
     3
 
-    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split(); len(x); sum(xx)"
-    6
-
-How it works?
--------------
 
 Py3line produces a transform over the input data stream.
 Py3line transform is constructed from a sequence of python actions.
-Each action can be an action **over an element of stream** or
-an action **over the stream**.
 
-First example overview ::
-
-    echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split(); len(x)"
-
- * **echo -e "Here are\nsome\nwords for you."** -- create an input stream data consists of three lines
- * **|** -- pipeline input stream to py3line
- * **"x.split()" -a "len(x)"** -- define two actions: "x.split()" and "len(x)". Each of them is element based action
-
-Py3line expects to get at least one transformation action as positional argument.
-You also can define additional action by using **-a** arguments,
-as shown in the example above.
+ * **echo -e "Here are\nsome\nwords for you."** -- create an input data stream consists of three lines
+ * **|** -- pipeline input data stream to py3line
+ * **"x.split(); len(x)"** -- define two py3line actions: "x.split()" and "len(x)". Each of them transform an input stream step by step.
 
 The example above can be represented as the following python pseudo-code::
 
@@ -99,19 +84,25 @@ The example above can be represented as the following python pseudo-code::
 
         print(x)
 
-Second example overview ::
 
-    echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split(); len(x); sum(xx)"
+Stream stransform
+-----------------
 
-Here we have stream based action **"sum(xx)"**.
+Lets try more complex example, we want to evaluate a sum of number of words in each line ::
+
+    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split(); len(x); sum(stream)"
+    6
+
+
+Here we have stream transformation action **"sum(stream)"**.
 
 It can be represented as python pseudo-code::
 
     import sys
 
-    xx = [x for x in sys.stdin.readlines()]
+    stream = []
 
-    for x in xx:
+    for x in sys.stdin.readlines():
 
         # 1) action "x.split()"
         x = x.split()
@@ -119,52 +110,41 @@ It can be represented as python pseudo-code::
         # 2) action "len(x)"
         x = len(x)
 
-    # 3) action "sum(xx)"
-    print(sum(xx))
+        stream.append(x)
 
-What is order actions?
-----------------------
+    # 3) action "sum(stream)"
+    print(sum(stream))
 
-This commands are equal::
 
-    ./py3line.py "x.split(); len(x); sum(xx)"
-    ./py3line.py "x.split()" "len(x)" "sum(xx)"
-    ./py3line.py "x.split(); len(x)" 'sum(xx)'
+Details
+=======
 
-But we recommend use::
-
-    ./py3line.py "x.split(); len(x); sum(xx)"
-
-as the right actions ordering.
-
-Why it so? Because you must pass one action as positional argument.
-
-Actions chaining
-----------------
-
-Let us define some terminology. **py3line action1 -a action2 -a action3**
+Let us define some terminology. **py3line "action1; action2; action3**
 
 We have actions: action1, action2 and action3.
 Each of them may be element based or stream based.
 
+Element based and stream based actions
+--------------------------------------
+
 **Element based** action can be represented as python pseudo-code::
 
-    xx = ...
-    new_xx = []
+    stream = ...
+    new_stream = []
 
-    for x in xx:
+    for x in stream:
         # DO ELEMENT BASED ACTION ON `x`
         result = eval(compile(action_x, ..., 'eval'), {'x': x})
-        new_xx.append(result)
+        new_stream.append(result)
 
-    xx = new_xx
+    stream = new_stream
 
 **Stream based** action can be represented as python pseudo-code::
 
-    xx = ...
+    stream = ...
 
-    # DO STREAM BASED ACTION ON `xx`
-    xx = eval(compile(action_xx, ..., 'eval'), {'xx': xx})
+    # DO STREAM BASED ACTION ON `stream`
+    stream = eval(compile(action_stream, ..., 'eval'), {'stream': stream})
 
 Pre-actions
 -----------
@@ -175,30 +155,28 @@ You can use **-m** options for import module::
 
     ./py3line.py -m shlex "shlex.split(x)[13]"
 
-You also can use **-p** options for run exec some actions before processing::
+You also exec some pre actions before stream processed::
 
     ./py3line.py "rgx = re.compile(r' is ([A-Z]\w*)'); rgx.search(x).group(1)"
 
-Pseudo code example **./py3line.py -m module1 -m module2 -p pre-action1  -p pre-action2 ...** ::
 
-    import module1
-    import module2
+Statement actions ??
+--------------------
 
-    pre-action1
-    pre-action2
+Sometimes you want define some variable during stream processing.
 
-    ...
+You can exec some statment actions before each stream element processed::
 
-**Options ordering**
+    ./py3line.py "z = 7; int(x); z += 0 if x < 0 else x; z else stream"
 
-Regardless of the sequence definition. First be made all imports (**-m** option),
-then be made all pre-action (**-p** option), and
-then actions (**-a** option + 1st positional argument).
+
+Some others examples
+====================
 
 .. code-block:: bash
 
     # Print every line (null transform)
-    $ cat ./testsuit/test.txt | ./py3line.py x
+    $ cat ./testsuit/test.txt | ./py3line.py
     This is my cat,
      whose name is Betty.
     This is my dog,
@@ -208,10 +186,13 @@ then actions (**-a** option + 1st positional argument).
     This is my goat,
      whose name is Adam.
 
+Or the same: ``cat ./testsuit/test.txt | ./py3line.py x`` and 
+``cat ./testsuit/test.txt | ./py3line.py stream``.
+
 .. code-block:: bash
 
     # Number every line
-    $ cat ./testsuit/test.txt | ./py3line.py "i, x"
+    $ cat ./testsuit/test.txt | ./py3line.py "enumerate(stream)"
     0 This is my cat,
     1  whose name is Betty.
     2 This is my dog,
@@ -233,6 +214,8 @@ then actions (**-a** option + 1st positional argument).
     whose George.
     This goat,
     whose Adam.
+
+Or just: ``cat ./testsuit/test.txt | ./py3line.py "x.split(); x[0], x[-1]"``
 
 .. code-block:: bash
 
@@ -258,8 +241,8 @@ then actions (**-a** option + 1st positional argument).
 
 .. code-block:: bash
 
-    # cat ./testsuit/test.txt | ./py3line.py "re.search(r' is ([A-Z]\w*)', x).group(1)"
-    $ cat ./testsuit/test.txt | ./py3line.py "rgx = re.compile(r' is ([A-Z]\w*)'); rgx.search(x).group(1)"
+    # cat ./testsuit/test.txt | ./py3line.py "re.search(r' is ([A-Z]\w*)', x) or skip; x.group(1)"
+    $ cat ./testsuit/test.txt | ./py3line.py "rgx = re.compile(r' is ([A-Z]\w*)'); rgx.search(x) or skip; x.group(1)"
     Betty
     Frank
     George
@@ -269,8 +252,8 @@ then actions (**-a** option + 1st positional argument).
 
     ## Original Examples
     # Print out the first 20 characters of every line
-    # cat ./testsuit/test.txt | ./py3line.py "i < 2"
-    $ cat ./testsuit/test.txt | ./py3line.py "list(xx)[:2]"
+    # cat ./testsuit/test.txt | ./py3line.py "enumerate(stream); x[1] if x[0] < 2 else skip;"
+    $ cat ./testsuit/test.txt | ./py3line.py "list(stream)[:2]"
     This is my cat,
      whose name is Betty.
 
@@ -300,7 +283,7 @@ then actions (**-a** option + 1st positional argument).
 .. code-block:: bash
 
     # Print most common accessed urls and filter accessed more then 5 times
-    $ cat ./testsuit/nginx.log | ./py3line.py -m shlex -m collections "shlex.split(x)[13]; collections.Counter(xx).most_common(); x[0] if x[1] > 5 else skip"
+    $ cat ./testsuit/nginx.log | ./py3line.py -m shlex -m collections "shlex.split(x)[13]; collections.Counter(stream).most_common(); x[0] if x[1] > 5 else skip"
     HEAD / HTTP/1.0
 
 Examples
@@ -309,6 +292,7 @@ Examples
     # create directory tree
     echo -e "y1\nx2\nz3" | py3line -m pathlib "pathlib.Path('/DATA/' + x +'/db-backup/').mkdir(parents=True, exist_ok=True)"
 
+    group by 3 lines ... (https://askubuntu.com/questions/1052622/separate-log-text-according-to-paragraph)
 
 HELP
 ----
@@ -352,3 +336,4 @@ HELP
 .. _piep: https://github.com/timbertson/piep/tree/master/piep/
 .. _pysed: https://github.com/dslackw/pysed/blob/master/pysed/main.py
 .. _pyline: https://github.com/westurner/pyline/blob/master/pyline/pyline.py
+.. _pyfil: https://github.com/ninjaaron/pyfil

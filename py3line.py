@@ -3,79 +3,239 @@
 # updated 2005.07.21, thanks to Jacob Oscarson
 # updated 2006.03.30, thanks to Mark Eichin
 # updated 2016.07.19, thanks to Pahaz White
+# updated 2019.05.01, thanks to Pahaz White (v0.2.0)
 
-import logging
-import os
-import shlex
-import subprocess
-import sys
-import re
-import argparse
-import tokenize
-import types
-import pathlib
-import time
-import datetime
-from collections import Iterable
 from io import BytesIO
+import tokenize
 from pprint import pprint
+from collections import namedtuple
+import logging
+import argparse
+import tempfile
+import traceback
+from collections.abc import Iterable
+import sys
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 NAME = 'py3line'
 logger = logging.getLogger(NAME)
-skip = object()
 
 if sys.version_info[0] != 3:
     raise RuntimeError("Only python 3.x is supported")
 
+IN_STREAM = r'line.rstrip("\r\n") for line in sys.stdin if line'
+CODE_HEAD = '''
+import os
+import sys
+import types
+import re
+import shlex
+import shutil
+import pathlib
+import operator
+import collections
+import itertools
+import functools
+import json
+import base64
+import random
+import time
+import subprocess
 
-def x_processor(reader, index, expr, compiled_expr, global_ctx):
-    """
-    Line based action processor
-    """
-    for i, x in enumerate(reader):
-        try:
-            result = eval(compiled_expr, global_ctx, locals())
-        except Exception as exc:
-            logger.info("EXPR[%d]: %r, LINE[%d]: %r, ERROR: %r",
-                        index, expr, i, x, exc)
+skip = object()
+
+def flatten(list_of_lists):
+    return itertools.chain.from_iterable(list_of_lists)
+
+def most_common(stream):
+    return collections.Counter(stream).most_common()
+
+def print_stream(stream):
+    for x in stream:
+        if x is skip:
             continue
-
-        if result is skip:
-            logger.debug("EXPR[%d]: %r, LINE[%d]: %r, SKIP",
-                         index, expr, i, x)
-            continue
-
-        logger.debug("EXPR[%d]: %r, LINE[%d]: %r => %r",
-                     index, expr, i, x, result)
-        yield result
-
-
-def xx_processor(reader, index, expr, compiled_expr, global_ctx):
-    """
-    Stream transformation action (Stream based processor)
-    """
-    xx = reader
-    try:
-        result = eval(compiled_expr, global_ctx, locals())
-    except TypeError as _exc:
-        # fix xx[:3], xx[1:-1], ...
-        if str(_exc).find("object is not subscriptable") != -1:
-            logger.debug("EXPR[%d]: %r MEMORIZE STREAM", index, expr)
-            xx = list(xx)
-            result = eval(compiled_expr, global_ctx, locals())
+        elif isinstance(x, Iterable) and not isinstance(x, (str, bytes, bytearray)):
+            print(*x, file=sys.stdout)
         else:
-            logger.error("EXPR[%d]: %r, ERROR: %r", index, expr, _exc)
-            raise _exc
-    logger.debug("EXPR[%d]: %r => %r", index, expr, result)
-    return result
+            print(x, file=sys.stdout)
+'''
 
 
-def pre_processor(reader):
-    for x in reader:
-        if x.endswith('\n'):
-            x = x[:-1]
-        yield x
+def to_tokens(expr):
+    return list(tokenize.tokenize(BytesIO(expr.encode('utf-8')).readline))[1:-1]
+
+
+def get_set_variable_name(tokens):
+    set_var_operators = {'='}
+    is_set_variable = (
+        len(tokens) > 2 and tokens[0].type == tokenize.NAME
+        and tokens[1].type == tokenize.OP
+        and tokens[1].string in set_var_operators)
+    return None if not is_set_variable else tokens[0].string
+
+
+def _preprocess_expressions(exprs):
+    Action = namedtuple('Action', 'expr, tokens, code, warns, is_element_based_action, is_stream_based_action, is_pre_action, is_statement_action, stream_based_actions_group')
+    actions = []
+    variables = set()
+    stream_based_actions_group = 0
+    has_stream = False
+    prev_is_stream_based_action = False
+    stream_based_markers = {'stream'}
+    element_based_markers = {'x'}
+    stream_markers = element_based_markers | stream_based_markers
+    for expr in exprs:
+        tokens = to_tokens(expr)
+        warns = []
+
+        # stream block
+        is_element_based_action = any(
+            (token.type == tokenize.NAME and 
+             any(marker == token.string for marker in element_based_markers))
+            for token in tokens)
+        is_stream_based_action = any(
+            (token.type == tokenize.NAME and 
+             any(marker == token.string for marker in stream_based_markers))
+            for token in tokens)
+        if is_element_based_action and is_stream_based_action:
+            # ex: (k for x in stream for k in x)
+            is_element_based_action = False
+            is_stream_based_action = True
+        is_stream = is_element_based_action or is_stream_based_action
+
+        if is_stream and not has_stream:
+            has_stream = True
+            stream_based_actions_group = 1
+        elif is_stream_based_action:
+            stream_based_actions_group += 1
+        elif prev_is_stream_based_action:
+            stream_based_actions_group += 1
+
+        # set variable statment block
+        # TODO(pahaz): add support `x1, x2 = 1, 2` and unpacking!
+        # TODO(pahaz): add support `x12 += 1`
+        set_variable_name = get_set_variable_name(tokens)
+        if set_variable_name:
+            if set_variable_name in stream_markers:
+                # VAR = EXPR -transform-to-> EXPR
+                err_expr = expr
+                expr = expr.split('=', 1)[1].strip()
+                tokens = tokens[2:]
+                warns.append(f"use `{expr}` instead of `{err_expr}`")
+            else:
+                variables.add(set_variable_name)
+
+        # import checks
+        if expr.startswith('import '):
+            module_name = expr[len('import '):]
+            warns.append(f'use `-m {module_name}` option instead of `{expr}`')
+
+        is_pre_action = not is_stream and not has_stream
+        is_statement_action = not is_stream and has_stream
+
+        mode = 'eval' if is_stream else 'exec'
+        try:
+            compile(expr, NAME, mode)
+        except Exception as exc:
+            if mode == 'eval' and _is_compile_by_exec(expr):
+                # TODO(pahaz): example `s = sum(stream)`
+                if is_stream_based_action:
+                    is_element_based_action = False
+                    is_stream_based_action = True
+                    is_pre_action = False
+                    is_statement_action = False
+                else:
+                    is_element_based_action = False
+                    is_stream_based_action = False
+                    is_pre_action = not has_stream
+                    is_statement_action = has_stream
+            else:
+                logger.error("ERROR: EXPR[%r]: %s", expr, exc)
+                raise RuntimeError('compile expr problem')
+
+        # print(tokens)
+        # print(is_element_based_action, is_stream_based_action, is_pre_action, is_statement_action, stream_based_actions_group)
+        actions.append(Action(expr, None, None, warns, is_element_based_action, is_stream_based_action, is_pre_action, is_statement_action, stream_based_actions_group))
+
+        prev_is_stream_based_action = is_stream_based_action
+
+    return actions, variables
+
+
+def _is_compile_by_exec(expr):
+    try:
+        compile(expr, NAME, 'exec')
+    except Exception:
+        return False    
+    return True
+
+
+def _codegen(actions, variables, modules):
+    variables = sorted(variables)
+    modules = sorted(modules)
+    lines = []
+
+    for module in modules:
+        lines.append(f'import {module}')
+
+    lines.append(CODE_HEAD)
+
+    call_stack = []
+    prev_stream_based_actions_group = 0
+    prev_is_in_loop = False
+
+    for action in (x for x in actions if not x.is_pre_action):
+        if prev_stream_based_actions_group < action.stream_based_actions_group:
+            if prev_is_in_loop:
+                lines.append(f'        yield x\n')
+            lines.append(f'def stream_based_actions_{action.stream_based_actions_group}(stream):')
+            call_stack.append(f'stream_based_actions_{action.stream_based_actions_group}')
+            if variables:
+                lines.append(f'    global {", ".join(variables)}')
+            if action.is_element_based_action or action.is_statement_action:
+                lines.append('    for x in stream:')
+
+        if action.is_element_based_action:
+            lines.append(f'        x = {action.expr}')
+            lines.append(f'        if x is skip:')
+            lines.append(f'            continue')
+            prev_is_in_loop = True
+        elif action.is_statement_action:
+            lines.append(f'        {action.expr}')
+            prev_is_in_loop = True
+        elif action.is_stream_based_action:
+            lines.append(f'    stream = {action.expr}')
+            lines.append(f'    if isinstance(stream, (str, bytes, bytearray)):')
+            lines.append(f'        yield stream')
+            lines.append(f'    else:')
+            lines.append(f'        try:')
+            lines.append(f'            yield from stream')
+            lines.append(f'        except Exception as exc:')
+            lines.append(f'            if "is not iterable" in str(exc):')
+            lines.append(f'                yield stream')
+            lines.append(f'            else:')
+            lines.append(f'                raise\n')
+            prev_is_in_loop = False
+        else:
+            raise RuntimeError('unexpected!')
+
+        prev_stream_based_actions_group = action.stream_based_actions_group
+
+    if prev_is_in_loop:
+        lines.append(f'        yield x\n')
+    call_stack.append('print_stream')
+
+    lines.append(f'if __name__ == "__main__":')
+    for action in (x for x in actions if x.is_pre_action):
+        lines.append(f'    {action.expr}')
+
+    if call_stack:
+        funcs = ''.join(reversed([f'{x}(' for x in call_stack])) + IN_STREAM + (')' * len(call_stack))
+        lines.append(f'    {funcs}')
+
+    return '\n'.join(lines)
+
+
 
 
 def parseargs():
@@ -107,7 +267,12 @@ def parseargs():
                         action='store_true',
                         help='Print the version string')
 
+    parser.add_argument('--code',
+                        dest='code',
+                        action='store_true')
+
     return parser.parse_args()
+
 
 
 def _setup_logger(args):
@@ -133,110 +298,13 @@ def _setup_logger(args):
     pywarnings.handlers.extend(logger.handlers)
 
 
-def _split_expressions(exprs):
-    """
-    >>> _split_expressions(["x.split()"])
-    ([], ['x.split()'], [], [])
-    >>> _split_expressions(["xxx = re.compile('[a-z]')"])
-    (["xxx = re.compile('[a-z]')"], [], [], [])
-    >>> _split_expressions(["x.split()", "xxx = re.compile('[a-z]')"])
-    (["xxx = re.compile('[a-z]')"], ['x.split()'], ["xxx = re.compile('[a-z]')"], [])
-    >>> _split_expressions(["int(x) - 1", "sum(xx)"])
-    ([], ['int(x) - 1', 'sum(xx)'], [], [])
-    >>> _split_expressions(["int(x) - 1", "import xxx"])
-    (['import xxx'], ['int(x) - 1'], ['import xxx'], ['import xxx'])
-    >>> _split_expressions(["import xxx"])
-    (['import xxx'], [], [], ['import xxx'])
-    >>> _split_expressions(["int(x)", "sum(xx)", "x = 1"])
-    ([], ['int(x)', 'sum(xx)', 'x = 1'], [], [])
-    >>> _split_expressions(['y', 'y.w()', 'import xxx'])
-    (['y', 'y.w()', 'import xxx'], [], [], ['import xxx'])
-    """
-    pre_actions = []
-    stream_actions = []
-    warn_pre_actions = []
-    warn_imports = []
-
-    stream_markers = ['i', 'x', 'xx']
-    for expr in exprs:
-        tokens = tokenize.tokenize(BytesIO(expr.encode('utf-8')).readline)
-        is_stream = any(
-            (token.type == tokenize.NAME and
-             any(marker == token.string for marker in stream_markers))
-            for token in tokens
-        )
-        if is_stream:
-            stream_actions.append(expr)
-        else:
-            pre_actions.append(expr)
-
-            if stream_actions:
-                warn_pre_actions.append(expr)
-
-        if expr.startswith('import '):
-            warn_imports.append(expr)
-
-    return pre_actions, stream_actions, warn_pre_actions, warn_imports
-
-
-def _import_modules(modules, global_ctx):
-    for i, module in enumerate(modules):
-        try:
-            global_ctx[module] = __import__(module, global_ctx, global_ctx)
-        except Exception as exc:
-            logger.error("IMPORT[%d]: %r, ERROR: %r", i, module, exc)
-            raise
-
-
-def _pre_actions(pre_exprs, global_ctx):
-    for i, expr in enumerate(pre_exprs):
-        try:
-            compiled_expr = compile(expr, NAME, 'exec')
-            exec(compiled_expr, global_ctx, global_ctx)
-        except Exception as exc:
-            logger.error("EXPR[%d]: %r, ERROR: %r", i, expr, exc)
-            raise
-
-
-def _get_actions(exprs):
-    actions = []
-    for i, expr in enumerate(exprs):
-        try:
-            tokens = tokenize.tokenize(BytesIO(expr.encode('utf-8')).readline)
-            is_full_stream_processor = any(
-                (token.type == tokenize.NAME and token.string == 'xx')
-                for token in tokens)
-            compiled_expr = compile(expr, NAME, 'eval')
-            actions.append((i, expr, compiled_expr, is_full_stream_processor))
-        except Exception as exc:
-            logger.error("EXPR[%d]: %r, ERROR: %r", i, expr, exc)
-            raise
-    return actions
-
-
-def _process_result(writer, result):
-    if result is skip:
-        return
-    elif isinstance(result, (list, tuple, types.GeneratorType)):
-        print(*result, file=writer)
-    else:
-        print(result, file=writer)
-
-
-def _process_results(writer, results):
-    for result in results:
-        _process_result(writer, result)
-
-
-def global_run(*x, stdout=subprocess.PIPE, check=False, shell=True, **kwargs):
-    return subprocess.run(
-        *x, stdout=stdout, check=check, shell=shell,
-        **kwargs)
-
-
-def global_sh(*x, stdout=subprocess.PIPE, check=False, shell=True, **kwargs):
-    result = global_run(*x, stdout=stdout, check=check, shell=shell, **kwargs)
-    return result.stdout.decode() if result.returncode == 0 else skip
+def try_to_write_to_tmp_py_file(data):
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.py',prefix='go',delete=False) as fp:
+            fp.write(data.encode('utf-8'))
+        return fp.name
+    except Exception:
+        return None
 
 
 def main():
@@ -250,52 +318,53 @@ def main():
     modules = [
         z.strip() for x in args.modules
         for z in x.split(',') if z.strip()]
-    pre_actions, stream_actions, warn_pre_actions, warn_imports = \
-        _split_expressions(expressions)
 
-    if warn_pre_actions:
-        pre_no_imports = [x for x in pre_actions if x not in warn_imports]
-        command = "; ".join(warn_imports + pre_no_imports + stream_actions)
-        m_command = " -m " + repr(','.join(modules)) if modules else ''
-        logger.warning("use command: %s%s %r", sys.argv[0], m_command, command)
-    if args.version:
-        print(__version__)
-        return 0
+    actions, variables = _preprocess_expressions(expressions)
+    code = _codegen(actions, variables, modules)
 
-    global_ctx = {
-        'skip': skip,
-        'os': os,
-        'sys': sys,
-        're': re,
-        'shlex': shlex,
-        'pprint': pprint,
-        'run': global_run,
-        'sh': global_sh,
-        'STDOUT': subprocess.STDOUT,
-        'PIPE': subprocess.PIPE,
-        'DEVNULL': subprocess.DEVNULL,
-    }
-
-    try:
-        _import_modules(modules, global_ctx)
-        _pre_actions(pre_actions, global_ctx)
-    except Exception:
-        logger.error('exit(1)')
-        return 1
-
-    in_stream, output = pre_processor(sys.stdin), sys.stdout
-    actions = _get_actions(stream_actions)
-    for i, expr, compiled_expr, is_full_stream_processor in actions:
-        processor = xx_processor if is_full_stream_processor else x_processor
-        in_stream = processor(in_stream, i, expr, compiled_expr, global_ctx)
-
-    results = in_stream
-    if isinstance(results, Iterable):
-        _process_results(output, results)
+    if args.code:
+        print(code)
     else:
-        _process_result(output, results)
+        exit_code = 0
+        try:
+            name = try_to_write_to_tmp_py_file(code) or "<string>"
+            try:
+                exec(compile(code, name, 'exec'), globals())
+            except Exception:
+                etype, exc, tb = sys.exc_info()
+                tb_offset = 1
+                try:
+                    import IPython.core.ultratb
+                    itb = IPython.core.ultratb.VerboseTB(include_vars=False)
+                    trace_text = itb.text(etype, exc, tb, tb_offset=tb_offset)
+                except:
+                    trace = ['Traceback (most recent call last):\n']
+                    trace += traceback.extract_tb(tb).format()[tb_offset:]
+                    trace += traceback.format_exception_only(etype,exc)
+                    trace_text = ''.join(trace)
+                    trace_text = trace_text.replace(name, "<string>")
+                logger.error(trace_text)
+                exit_code = 1
+        finally:
+            if os.path.exists(name):
+                os.unlink(name)
+        return (exit_code)
 
-    return 0
+
+def show_tokens(s):
+    pprint(to_tokens(s))
+
+# show_tokens('')
+# show_tokens('2')
+# show_tokens('q = 7')
+# show_tokens('q, w = 7, 8')
+# show_tokens('x == 7')
+# show_tokens('f()')
+# show_tokens('if 1: continue')
+# show_tokens('k += 11')
+# show_tokens('(k for x in stream for k in x)')
+
+# exec(_codegen(*_preprocess_expressions(['q = 7', 'w = 8', 'skip if x == q else x', 'x + w', 'sum(stream)', 'sum(stream)', 'x + w', 'w1, w2 = 7, 8', 'zz = 2'])))
 
 
 if __name__ == '__main__':
