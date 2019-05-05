@@ -5,7 +5,7 @@
 Pyline is a UNIX command-line tool for bash one-liner scripts.
 It's python line alternative to `grep`, `sed`, and `awk`.
 
-This project inspired by: `piep`_, `pysed`_, `pyline`_, `pyp`_ and
+This project inspired by: `pyfil`_, `piep`_, `pysed`_, `pyline`_, `pyp`_ and
 `Jacob+Mark recipe <https://code.activestate.com/recipes/437932-pyline-a-grep-like-sed-like-command-line-tool/>`_
 
 **WHY I MAKE IT?**
@@ -26,8 +26,10 @@ Why not a `pyline`?
 **PRINCIPLES**
 
  * AS MUCH SIMPLE TO UNDERSTAND BASH ONE LINER SCRIPT AS POSSIBLE
- * AS MUCH EASY TO INSTALL AS POSSIBLE
- * AS MUCH SMALL CODEBASE AS POSSIBLE
+ * LESS SCRIPT ARGUMENTS
+ * AS MUCH EASY TO INSTALL AS POSSIBLE (CONTAINER FRIENDLY ???)
+ * SMALL CODEBASE (less 500 loc)
+ * LAZY AND EFFECTIVE AS POSSIBLE
 
 Installation
 ============
@@ -57,64 +59,214 @@ Lets start with examples, we want to evaluate a number of words in each line:
 
 .. code-block:: bash
 
-    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split(); len(x)"
-    2
-    1
-    3
+    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "x = len(line.split(' ')); print(x, line)"
+    2 Here are
+    1 some
+    3 words for you.
 
 
-Py3line produces a transform over the input data stream.
-Py3line transform is constructed from a sequence of python actions.
+Py3line process input stream by python code line by line.
 
- * **echo -e "Here are\nsome\nwords for you."** -- create an input data stream consists of three lines
- * **|** -- pipeline input data stream to py3line
- * **"x.split(); len(x)"** -- define two py3line actions: "x.split()" and "len(x)". Each of them transform an input stream step by step.
+ * **echo -e "Here are\nsome\nwords for you."** -- create an input stream consists of three lines
+ * **|** -- pipeline input stream to py3line
+ * **"x = len(line.split()); print(x, line)"** -- define 2 actions: "x = len(line.split(' '))" evaluate number of words in each line, then "print(x, line)" print the result. Each action apply to the input stream step by step.
 
-The example above can be represented as the following python pseudo-code::
+The example above can be represented as the following python code::
 
     import sys
 
-    for x in sys.stdin.readlines():
+    def process(stream):
+        for line in stream:
+            x = len(line.split(' '))  # action 1
+            print(x, line)            # action 2
+            yield line
 
-        # 1) action "x.split()"
-        x = x.split()
+    stream = (line.rstrip("\r\n") for line in sys.stdin if line)
+    stream = process(stream)
+    for line in stream: pass
 
-        # 2) action "len(x)"
-        x = len(x)
+You can also get the executed python code by ``--pycode`` argument.
 
-        print(x)
+.. code-block:: bash
 
+    $ ./py3line.py "x = len(line.split(' ')); print(x, line)" --pycode
+    ...
 
-Stream stransform
------------------
+Stream transform
+----------------
 
-Lets try more complex example, we want to evaluate a sum of number of words in each line ::
+Lets try more complex example, we want to to evaluate the number of words in the whole file. 
+This value is easy to calculate if you convert the input stream from a stream of lines 
+to a number of words in line stream. Just override ``line`` variable ::
 
-    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "x.split(); len(x); sum(stream)"
+    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "line = len(line.split()); print(sum(stream))"
     6
 
+Here we have a stream transformation action **"print(sum(stream))"**.
 
-Here we have stream transformation action **"sum(stream)"**.
-
-It can be represented as python pseudo-code::
+The example above can be represented as the following python code::
 
     import sys
 
-    stream = []
+    def process(stram):
+        for line in stream:
+            line = len(line.split())  # action 1
+            yield line
 
-    for x in sys.stdin.readlines():
+    def transform(stream):
+        print(sum(stream))            # action 2
+        return stream
 
-        # 1) action "x.split()"
-        x = x.split()
+    stream = (line.rstrip("\r\n") for line in sys.stdin if line)
+    stream = transform(process(stream))
+    for line in stream: pass
 
-        # 2) action "len(x)"
-        x = len(x)
+You can also get the executed python code by ``--pycode`` argument.
 
-        stream.append(x)
+.. code-block:: bash
 
-    # 3) action "sum(stream)"
-    print(sum(stream))
+    $ ./py3line.py "line = len(line.split()); print(sum(stream))" --pycode
+    ...
 
+Lazy as possible
+----------------
+
+Py3line does calculations only when necessary by the use of python generators.
+This means that the input stream does not fit into memory and you can easy process more data than your RAM allows.
+
+But it also imposes limitations on the ability to work with the data flow. 
+You cannot use multiple aggregation functions at the same time. For example, 
+if we want to calculate the maximum number of words in a line and the total number of words in a whole file at the same time.::
+
+    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "line = len(line.split()); print(sum(stream)); print(max(stream))"
+    6
+    2019-05-05 14:55:09,353 | ERROR   | Traceback (most recent call last):
+      File "<string>", line 15, in <module>
+        stream = transform2(process1(stream))
+      File "<string>", line 10, in transform2
+        print(max(stream))
+    ValueError: max() arg is an empty sequence
+
+We can see the ``empty sequence`` error. It throws because our ``stream`` generator is already empty. 
+And we can't find any max value on empty stream.
+
+### stream memorization ###
+
+We can solve it by converting the ``stream`` generator to a list of values in memory using python ``list(stream)`` function. ::
+
+    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "line = len(line.split()); stream = list(stream); print(sum(stream), max(stream))"
+    6 3
+
+The example above can be represented as the following python code::
+
+    import sys
+
+    def process(stram):
+        for line in stream:
+            line = len(line.split())     # action 1
+            yield line
+
+    def transform(stream):
+        stream = list(stream)            # action 2
+        print(sum(stream), max(stream))  # action 3
+        return stream
+
+    stream = (line.rstrip("\r\n") for line in sys.stdin if line)
+    stream = transform(process(stream))
+    for line in stream: pass
+
+### evaluate on the fly ###
+
+We can also solve it without putting the stream into memory. Just use the auxiliary variables where 
+we will place the calculated result in the process of processing the stream. ::
+
+    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "s = 0; m = 0; num_of_words = len(line.split()); s += num_of_words; m = max(m, num_of_words); print(s, m)"
+    2 2
+    3 2
+    6 3
+
+The example above can be represented as the following python code::
+
+    import sys
+
+    def process(stram):
+        s = 0                                 # action 1
+        m = 0                                 # action 2
+        for line in stream:
+            num_of_words = len(line.split())  # action 3
+            s += num_of_words                 # action 4
+            m = max(m, num_of_words)          # action 5
+            print(s, m)                       # action 6
+            yield line
+
+    stream = (line.rstrip("\r\n") for line in sys.stdin if line)
+    stream = process(stream)
+    for line in stream: pass
+
+But we want only the last result. We don't want to see intermediate results.
+To do this, you can add a loop over all elements of the stream before printing 
+by ``for line in stream: pass``. Don't worry, this loop doesn't add unnecessary calculations 
+as we use Python language generators. The loop will simply force the stream 
+to be iterated before the print function called. ::
+
+    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "s = 0; m = 0; num_of_words = len(line.split()); s += num_of_words; m = max(m, num_of_words); for line in stream: pass; print(s, m)"
+    6 3
+
+The example above can be represented as the following python code::
+
+    import sys
+
+    def process(stram):
+        global s, m
+        s = 0                                 # action 1
+        m = 0                                 # action 2
+        for line in stream:
+            num_of_words = len(line.split())  # action 3
+            s += num_of_words                 # action 4
+            m = max(m, num_of_words)          # action 5
+            yield line
+
+    def transform(stream):
+        global s, m
+        for line in stream: pass              # action 6
+        print(s, m)                           # action 7
+        return stream
+
+    stream = (line.rstrip("\r\n") for line in sys.stdin if line)
+    stream = transform(process(stream))
+    for line in stream: pass
+
+### python generator laziness ###
+
+Let's check python generator laziness. 
+Just run ``for line in stream: print(1);`` 
+twice in a row::
+
+    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "for line in stream: print(1); for line in stream: print(1)"
+    1
+    1
+    1
+
+As we can see, it only one-time iteration over the python generator items. 
+And all subsequent iterations will work with an empty generator, 
+which is equivalent to a cycle through an empty list.
+
+The example above can be represented as the following python code::
+
+    import sys
+
+    def transform(stream):
+        for line in stream: pass              # action 1 (3 iterations)
+        for line in stream: pass              # action 2 (0 iterations)
+        return stream
+
+    stream = (line.rstrip("\r\n") for line in sys.stdin if line)
+    stream = transform(stream)
+    for line in stream: pass                  # (0 iterations)
+
+### work with a part of stream ###
+
+TODO ....
 
 Details
 =======
@@ -122,61 +274,66 @@ Details
 Let us define some terminology. **py3line "action1; action2; action3**
 
 We have actions: action1, action2 and action3.
-Each of them may be element based or stream based.
+Each action have type. It may be ``element processing`` or ``stream transformation``.
 
-Element based and stream based actions
---------------------------------------
+We can understand the type of action based on the variables used in it. 
+We have two variables: ``line`` and ``stream``. 
+They are markers that define the type of action.
 
-**Element based** action can be represented as python pseudo-code::
+Lets look at some types from examples abow::
 
-    stream = ...
-    new_stream = []
+    x = line.split()                 -- element processing
+    print(x, line)                   -- element processing
+    print(sum(stream))               -- stream transformation
+    stream = list(stream)            -- stream transformation
+    print(sum(stream), max(stream))  -- stream transformation
+    s = 0                            -- unidentified
+    m = 0                            -- unidentified
+    num_of_words = len(line.split()) -- element processing
+    s += num_of_words                -- unidentified
+    m = max(m, num_of_words)         -- unidentified
+    print(s, m)                      -- unidentified
+    for line in stream: pass         -- stream transformation
 
-    for x in stream:
-        # DO ELEMENT BASED ACTION ON `x`
-        result = eval(compile(action_x, ..., 'eval'), {'x': x})
-        new_stream.append(result)
+**[rule1]** If an action has an undefined type, it inherits its type from the previous action.
+**[rule2]** If there is no previous action, then the action is considered a stream transformation.
 
-    stream = new_stream
+Examples::
 
-**Stream based** action can be represented as python pseudo-code::
+    s = 0                            -- stream transformation (because of [rule2])
+    num_of_words = len(line.split()) -- element processing (because of `line` marker)
+    s += num_of_words                -- element processing (because of [rule1])
+    print(s)                         -- element processing (because of [rule1])
 
-    stream = ...
+And if we want to do ``print`` at the and, we should have some `stream` marker in actions before. 
 
-    # DO STREAM BASED ACTION ON `stream`
-    stream = eval(compile(action_stream, ..., 'eval'), {'stream': stream})
+::
 
-Pre-actions
------------
+    s = 0                            -- stream transformation (because of [rule2])
+    num_of_words = len(line.split()) -- element processing (because of `line` marker)
+    s += num_of_words                -- element processing (because of [rule1])
+    stream                           -- stream transformation (because of `stream` marker)
+    print(s)                         -- stream transformation (because of [rule1])
 
-Sometimes you want prepare some variables or import some modules.
+Unfortunately, it is not so clearly to people who are not familiar with the the implementation.
+Therefore, it is better to use a more explicit to readers actions like ``for line in stream: pass``.
 
-You can use **-m** options for import module::
+::
 
-    ./py3line.py -m shlex "shlex.split(x)[13]"
-
-You also exec some pre actions before stream processed::
-
-    ./py3line.py "rgx = re.compile(r' is ([A-Z]\w*)'); rgx.search(x).group(1)"
-
-
-Statement actions ??
---------------------
-
-Sometimes you want define some variable during stream processing.
-
-You can exec some statment actions before each stream element processed::
-
-    ./py3line.py "z = 7; int(x); z += 0 if x < 0 else x; z else stream"
+    s = 0                            -- stream transformation (because of [rule2])
+    num_of_words = len(line.split()) -- element processing (because of `line` marker)
+    s += num_of_words                -- element processing (because of [rule1])
+    for line in stream: pass         -- stream transformation (because of `stream` marker)
+    print(s)                         -- stream transformation (because of [rule1])
 
 
-Some others examples
-====================
+Some examples
+=============
 
 .. code-block:: bash
 
     # Print every line (null transform)
-    $ cat ./testsuit/test.txt | ./py3line.py
+    $ cat ./testsuit/test.txt | ./py3line.py "print(line)"
     This is my cat,
      whose name is Betty.
     This is my dog,
@@ -186,13 +343,23 @@ Some others examples
     This is my goat,
      whose name is Adam.
 
-Or the same: ``cat ./testsuit/test.txt | ./py3line.py x`` and 
-``cat ./testsuit/test.txt | ./py3line.py stream``.
+.. code-block:: bash
+
+    # Number every line
+    $ cat ./testsuit/test.txt | ./py3line.py "stream = enumerate(stream); print(line)"
+    (0, 'This is my cat,')
+    (1, ' whose name is Betty.')
+    (2, 'This is my dog,')
+    (3, ' whose name is Frank.')
+    (4, 'This is my fish,')
+    (5, ' whose name is George.')
+    (6, 'This is my goat,')
+    (7, ' whose name is Adam.')
 
 .. code-block:: bash
 
     # Number every line
-    $ cat ./testsuit/test.txt | ./py3line.py "enumerate(stream)"
+    $ cat ./testsuit/test.txt | ./py3line.py "stream = enumerate(stream); print(line[0], line[1])"
     0 This is my cat,
     1  whose name is Betty.
     2 This is my dog,
@@ -202,10 +369,12 @@ Or the same: ``cat ./testsuit/test.txt | ./py3line.py x`` and
     6 This is my goat,
     7  whose name is Adam.
 
+Or just ``cat ./testsuit/test.txt | ./py3line.py "stream = enumerate(stream); print(*line)"``
+
 .. code-block:: bash
 
     # Print every first and last word
-    $ cat ./testsuit/test.txt | ./py3line.py "x.split()[0], x.split()[-1]"
+    $ cat ./testsuit/test.txt | ./py3line.py "s = line.split(); print(s[0], s[-1])"
     This cat,
     whose Betty.
     This dog,
@@ -215,12 +384,23 @@ Or the same: ``cat ./testsuit/test.txt | ./py3line.py x`` and
     This goat,
     whose Adam.
 
-Or just: ``cat ./testsuit/test.txt | ./py3line.py "x.split(); x[0], x[-1]"``
+.. code-block:: bash
+
+    # Split into words and print as list (strip al non word char like comma, dot, etc)
+    $ cat ./testsuit/test.txt | ./py3line.py "print(re.findall(r'\w+', line))"
+    ['This', 'is', 'my', 'cat']
+    ['whose', 'name', 'is', 'Betty']
+    ['This', 'is', 'my', 'dog']
+    ['whose', 'name', 'is', 'Frank']
+    ['This', 'is', 'my', 'fish']
+    ['whose', 'name', 'is', 'George']
+    ['This', 'is', 'my', 'goat']
+    ['whose', 'name', 'is', 'Adam']
 
 .. code-block:: bash
 
-    # Split into words and print (strip al non word char like comma, dot, etc)
-    $ cat ./testsuit/test.txt | ./py3line.py "re.findall(r'\w+', x)"
+    # Split into words (strip al non word char like comma, dot, etc)
+    $ cat ./testsuit/test.txt | ./py3line.py "print(*re.findall(r'\w+', line))"
     This is my cat
     whose name is Betty
     This is my dog
@@ -232,8 +412,26 @@ Or just: ``cat ./testsuit/test.txt | ./py3line.py "x.split(); x[0], x[-1]"``
 
 .. code-block:: bash
 
+    # Find all three letter words
+    $ cat ./testsuit/test.txt | ./py3line.py "print(re.findall(r'\b\w\w\w\b', line))"
+    ['cat']
+    []
+    ['dog']
+    []
+    []
+    []
+    []
+    []
+
+    # Find all three letter words + skip empty lists
+    cat ./testsuit/test.txt | ./py3line.py "line = re.findall(r'\b\w\w\w\b', line); if not line: continue; print(line)"
+    ['cat']
+    ['dog']
+
+.. code-block:: bash
+
     # Regex matching with groups
-    $ cat ./testsuit/test.txt | ./py3line.py "re.findall(r' is ([A-Z]\w*)', x) or skip"
+    $ cat ./testsuit/test.txt | ./py3line.py "line = re.findall(r' is ([A-Z]\w*)', line); if not line: continue; print(*line)"
     Betty
     Frank
     George
@@ -241,7 +439,7 @@ Or just: ``cat ./testsuit/test.txt | ./py3line.py "x.split(); x[0], x[-1]"``
 
 .. code-block:: bash
 
-    # cat ./testsuit/test.txt | ./py3line.py "re.search(r' is ([A-Z]\w*)', x) or skip; x.group(1)"
+    # cat ./testsuit/test.txt | ./py3line.py "line = re.search(r' is ([A-Z]\w*)', line); if not line: continue; line.group(1)"
     $ cat ./testsuit/test.txt | ./py3line.py "rgx = re.compile(r' is ([A-Z]\w*)'); rgx.search(x) or skip; x.group(1)"
     Betty
     Frank
@@ -250,17 +448,16 @@ Or just: ``cat ./testsuit/test.txt | ./py3line.py "x.split(); x[0], x[-1]"``
 
 .. code-block:: bash
 
-    ## Original Examples
-    # Print out the first 20 characters of every line
-    # cat ./testsuit/test.txt | ./py3line.py "enumerate(stream); x[1] if x[0] < 2 else skip;"
-    $ cat ./testsuit/test.txt | ./py3line.py "list(stream)[:2]"
+    # head -n 2
+    # cat ./testsuit/test.txt | ./py3line.py "stream = enumerate(stream); if line[0] >= 2: break; print(line[1])"
+    $ cat ./testsuit/test.txt | ./py3line.py "stream = list(stream)[:2]; print(line)"
     This is my cat,
      whose name is Betty.
 
 .. code-block:: bash
 
     # Print just the URLs in the access log
-    $ cat ./testsuit/nginx.log | ./py3line.py -m shlex "shlex.split(x)[13]"
+    $ cat ./testsuit/nginx.log | ./py3line.py "print(shlex.split(line)[13])"
     HEAD / HTTP/1.0
     HEAD / HTTP/1.0
     HEAD / HTTP/1.0
@@ -283,14 +480,16 @@ Or just: ``cat ./testsuit/test.txt | ./py3line.py "x.split(); x[0], x[-1]"``
 .. code-block:: bash
 
     # Print most common accessed urls and filter accessed more then 5 times
-    $ cat ./testsuit/nginx.log | ./py3line.py -m shlex -m collections "shlex.split(x)[13]; collections.Counter(stream).most_common(); x[0] if x[1] > 5 else skip"
-    HEAD / HTTP/1.0
+    $ cat ./testsuit/nginx.log | ./py3line.py "line = shlex.split(line)[13]; stream = collections.Counter(stream).most_common(); if line[1] < 5: continue; print(line)"
+    ('HEAD / HTTP/1.0', 10)
 
-Examples
---------
+Complex examples
+----------------
+
+.. code-block:: bash
 
     # create directory tree
-    echo -e "y1\nx2\nz3" | py3line -m pathlib "pathlib.Path('/DATA/' + x +'/db-backup/').mkdir(parents=True, exist_ok=True)"
+    echo -e "y1\nx2\nz3" | ./py3line.py "pathlib.Path('/DATA/' + line +'/db-backup/').mkdir(parents=True, exist_ok=True)"
 
     group by 3 lines ... (https://askubuntu.com/questions/1052622/separate-log-text-according-to-paragraph)
 

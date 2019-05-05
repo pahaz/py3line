@@ -2,241 +2,115 @@
 
 # updated 2005.07.21, thanks to Jacob Oscarson
 # updated 2006.03.30, thanks to Mark Eichin
-# updated 2016.07.19, thanks to Pahaz White
+# updated 2016.07.19, thanks to Pahaz White (v0.1.0)
 # updated 2019.05.01, thanks to Pahaz White (v0.2.0)
+# updated 2019.05.05, thanks to Pahaz White (v0.3.0)
 
-from io import BytesIO
-import tokenize
+import ast
 from pprint import pprint
-from collections import namedtuple
+from collections import namedtuple, deque
+from enum import Enum
+import sys, os
 import logging
 import argparse
 import tempfile
 import traceback
-from collections.abc import Iterable
-import sys
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'
 NAME = 'py3line'
-logger = logging.getLogger(NAME)
+LOGGER = logging.getLogger(NAME)
+DEFAULT_MODULES = {
+    'os', 'sys', 'types', 're', 'shlex', 'shutil', 'pathlib', 
+    'operator', 'collections', 'itertools', 'functools', 
+    'json', 'base64', 'random', 'time', 'subprocess'}
+ActionTypes = Enum('ActionTypes', 'stream, element')
+Action = namedtuple('Action', 'string, warns, type, group')
+class Py3LineSyntaxError(SyntaxError): pass
 
 if sys.version_info[0] != 3:
     raise RuntimeError("Only python 3.x is supported")
 
-IN_STREAM = r'line.rstrip("\r\n") for line in sys.stdin if line'
-CODE_HEAD = '''
-import os
-import sys
-import types
-import re
-import shlex
-import shutil
-import pathlib
-import operator
-import collections
-import itertools
-import functools
-import json
-import base64
-import random
-import time
-import subprocess
-
-skip = object()
-
-def flatten(list_of_lists):
-    return itertools.chain.from_iterable(list_of_lists)
-
-def most_common(stream):
-    return collections.Counter(stream).most_common()
-
-def print_stream(stream):
-    for x in stream:
-        if x is skip:
-            continue
-        elif isinstance(x, Iterable) and not isinstance(x, (str, bytes, bytearray)):
-            print(*x, file=sys.stdout)
-        else:
-            print(x, file=sys.stdout)
-'''
-
+class _MyNodeVisitor(ast.NodeVisitor):
+    def __init__(self):
+        self.NameTypes = Enum('NameTypes', 'module, function')
+        self.NameContext = namedtuple('NameContext', 'type, use_names, def_names, local_names')
+        self._name_contexts = [self.NameContext(self.NameTypes.module, set(), set(), set())]
+        self._current_names = self._name_contexts[-1].use_names
+    def visit_Name(self, node):
+        self._current_names.add(node.id)
+    def visit_FunctionDef(self, node):
+        raise Py3LineSyntaxError('`def` is not allowed to use')
+    def visit_AsyncFunctionDef(self, node):
+        raise Py3LineSyntaxError('`async def` is not allowed to use')
+    def visit_ClassDef(self, node):
+        raise Py3LineSyntaxError('`class` is not allowed to use')
+    def visit_arguments(self, node):
+        print(ast.dump(node))
+        self.generic_visit(node)
+    def visit_arg(self, node):
+        current_local_names = self._name_contexts[-1].local_names
+        current_local_names.add(node.arg)
+        self.generic_visit(node)
+    def visit_alias(self, node):
+        current_def_names = self._name_contexts[-1].def_names
+        name = node.asname if node.asname else node.name
+        if name != '*':
+            current_def_names.add(name)
+        self.generic_visit(node)
+    def visit_Global(self, node):
+        raise Py3LineSyntaxError('`global` is not allowed to use')
+    def visit_Nonlocal(self, node):
+        raise Py3LineSyntaxError('`nonlocal` is not allowed to use')
+    def visit_comprehension(self, node):
+        self._current_names = self._name_contexts[-1].local_names
+        self.visit(node.target)
+        self._current_names = self._name_contexts[-1].use_names
+        self.visit(node.iter)
+        for if_ in node.ifs:
+            self.visit(if_)
+    def visit_Assign(self, node):
+        self._current_names = self._name_contexts[-1].def_names
+        for target in node.targets:
+            self.visit(target)
+        self._current_names = self._name_contexts[-1].use_names
+        if node.value:
+            self.visit(node.value)
+    def visit_AnnAssign(self, node):
+        raise Py3LineSyntaxError('variable assignment with type annatations is not allowed to use')
+    def visit_For(self, node):
+        self._current_names = self._name_contexts[-1].def_names
+        self.visit(node.target)
+        self._current_names = self._name_contexts[-1].use_names
+        self.visit(node.iter)
+        for target in node.body:
+            self.visit(target)
+    def visit_withitem(self, node):
+        self._current_names = self._name_contexts[-1].def_names
+        if node.optional_vars:
+            self.visit(node.optional_vars)
+        self._current_names = self._name_contexts[-1].use_names
+        self.visit(node.context_expr)
+    def visit_Try(self, node):
+        raise Py3LineSyntaxError('`try` is not allowed to use')
+    def visit_ExceptHandler(self, node):
+        raise Py3LineSyntaxError('`except` is not allowed to use')
+    def visit_AsyncWith(self, node):
+        raise Py3LineSyntaxError('`async with` is not allowed to use')
+    def visit_AsyncFor(self, node):
+        raise Py3LineSyntaxError('`async for` is not allowed to use')
+    def visit_Await(self, node):
+        raise Py3LineSyntaxError('`await` is not allowed to use')
 
 def to_tokens(expr):
-    return list(tokenize.tokenize(BytesIO(expr.encode('utf-8')).readline))[1:-1]
+    res = ast.parse(expr + '\n', mode='exec').body
+    if len(res) != 1:
+        raise Py3LineSyntaxError('unexpected multyline')
+    return res[0]
 
-
-def get_set_variable_name(tokens):
-    set_var_operators = {'='}
-    is_set_variable = (
-        len(tokens) > 2 and tokens[0].type == tokenize.NAME
-        and tokens[1].type == tokenize.OP
-        and tokens[1].string in set_var_operators)
-    return None if not is_set_variable else tokens[0].string
-
-
-def _preprocess_expressions(exprs):
-    Action = namedtuple('Action', 'expr, tokens, code, warns, is_element_based_action, is_stream_based_action, is_pre_action, is_statement_action, stream_based_actions_group')
-    actions = []
-    variables = set()
-    stream_based_actions_group = 0
-    has_stream = False
-    prev_is_stream_based_action = False
-    stream_based_markers = {'stream'}
-    element_based_markers = {'x'}
-    stream_markers = element_based_markers | stream_based_markers
-    for expr in exprs:
-        tokens = to_tokens(expr)
-        warns = []
-
-        # stream block
-        is_element_based_action = any(
-            (token.type == tokenize.NAME and 
-             any(marker == token.string for marker in element_based_markers))
-            for token in tokens)
-        is_stream_based_action = any(
-            (token.type == tokenize.NAME and 
-             any(marker == token.string for marker in stream_based_markers))
-            for token in tokens)
-        if is_element_based_action and is_stream_based_action:
-            # ex: (k for x in stream for k in x)
-            is_element_based_action = False
-            is_stream_based_action = True
-        is_stream = is_element_based_action or is_stream_based_action
-
-        if is_stream and not has_stream:
-            has_stream = True
-            stream_based_actions_group = 1
-        elif is_stream_based_action:
-            stream_based_actions_group += 1
-        elif prev_is_stream_based_action:
-            stream_based_actions_group += 1
-
-        # set variable statment block
-        # TODO(pahaz): add support `x1, x2 = 1, 2` and unpacking!
-        # TODO(pahaz): add support `x12 += 1`
-        set_variable_name = get_set_variable_name(tokens)
-        if set_variable_name:
-            if set_variable_name in stream_markers:
-                # VAR = EXPR -transform-to-> EXPR
-                err_expr = expr
-                expr = expr.split('=', 1)[1].strip()
-                tokens = tokens[2:]
-                warns.append(f"use `{expr}` instead of `{err_expr}`")
-            else:
-                variables.add(set_variable_name)
-
-        # import checks
-        if expr.startswith('import '):
-            module_name = expr[len('import '):]
-            warns.append(f'use `-m {module_name}` option instead of `{expr}`')
-
-        is_pre_action = not is_stream and not has_stream
-        is_statement_action = not is_stream and has_stream
-
-        mode = 'eval' if is_stream else 'exec'
-        try:
-            compile(expr, NAME, mode)
-        except Exception as exc:
-            if mode == 'eval' and _is_compile_by_exec(expr):
-                # TODO(pahaz): example `s = sum(stream)`
-                if is_stream_based_action:
-                    is_element_based_action = False
-                    is_stream_based_action = True
-                    is_pre_action = False
-                    is_statement_action = False
-                else:
-                    is_element_based_action = False
-                    is_stream_based_action = False
-                    is_pre_action = not has_stream
-                    is_statement_action = has_stream
-            else:
-                logger.error("ERROR: EXPR[%r]: %s", expr, exc)
-                raise RuntimeError('compile expr problem')
-
-        # print(tokens)
-        # print(is_element_based_action, is_stream_based_action, is_pre_action, is_statement_action, stream_based_actions_group)
-        actions.append(Action(expr, None, None, warns, is_element_based_action, is_stream_based_action, is_pre_action, is_statement_action, stream_based_actions_group))
-
-        prev_is_stream_based_action = is_stream_based_action
-
-    return actions, variables
-
-
-def _is_compile_by_exec(expr):
-    try:
-        compile(expr, NAME, 'exec')
-    except Exception:
-        return False    
-    return True
-
-
-def _codegen(actions, variables, modules):
-    variables = sorted(variables)
-    modules = sorted(modules)
-    lines = []
-
-    for module in modules:
-        lines.append(f'import {module}')
-
-    lines.append(CODE_HEAD)
-
-    call_stack = []
-    prev_stream_based_actions_group = 0
-    prev_is_in_loop = False
-
-    for action in (x for x in actions if not x.is_pre_action):
-        if prev_stream_based_actions_group < action.stream_based_actions_group:
-            if prev_is_in_loop:
-                lines.append(f'        yield x\n')
-            lines.append(f'def stream_based_actions_{action.stream_based_actions_group}(stream):')
-            call_stack.append(f'stream_based_actions_{action.stream_based_actions_group}')
-            if variables:
-                lines.append(f'    global {", ".join(variables)}')
-            if action.is_element_based_action or action.is_statement_action:
-                lines.append('    for x in stream:')
-
-        if action.is_element_based_action:
-            lines.append(f'        x = {action.expr}')
-            lines.append(f'        if x is skip:')
-            lines.append(f'            continue')
-            prev_is_in_loop = True
-        elif action.is_statement_action:
-            lines.append(f'        {action.expr}')
-            prev_is_in_loop = True
-        elif action.is_stream_based_action:
-            lines.append(f'    stream = {action.expr}')
-            lines.append(f'    if isinstance(stream, (str, bytes, bytearray)):')
-            lines.append(f'        yield stream')
-            lines.append(f'    else:')
-            lines.append(f'        try:')
-            lines.append(f'            yield from stream')
-            lines.append(f'        except Exception as exc:')
-            lines.append(f'            if "is not iterable" in str(exc):')
-            lines.append(f'                yield stream')
-            lines.append(f'            else:')
-            lines.append(f'                raise\n')
-            prev_is_in_loop = False
-        else:
-            raise RuntimeError('unexpected!')
-
-        prev_stream_based_actions_group = action.stream_based_actions_group
-
-    if prev_is_in_loop:
-        lines.append(f'        yield x\n')
-    call_stack.append('print_stream')
-
-    lines.append(f'if __name__ == "__main__":')
-    for action in (x for x in actions if x.is_pre_action):
-        lines.append(f'    {action.expr}')
-
-    if call_stack:
-        funcs = ''.join(reversed([f'{x}(' for x in call_stack])) + IN_STREAM + (')' * len(call_stack))
-        lines.append(f'    {funcs}')
-
-    return '\n'.join(lines)
-
-
-
+def get_names(tokens):
+    v = _MyNodeVisitor()
+    v.visit(tokens)
+    return v._name_contexts[-1].def_names, v._name_contexts[-1].use_names, v._name_contexts[-1].local_names
 
 def parseargs():
     description = (
@@ -248,12 +122,6 @@ def parseargs():
     parser.add_argument('expressions',
                         metavar='expression', nargs='*',
                         help='<python_expression>')
-
-    parser.add_argument('-m', '--modules',
-                        dest='modules',
-                        action='append',
-                        default=[],
-                        help='for m in modules: import m  #default: []')
 
     parser.add_argument('-v', '--verbose',
                         dest='verbose',
@@ -267,104 +135,190 @@ def parseargs():
                         action='store_true',
                         help='Print the version string')
 
-    parser.add_argument('--code',
-                        dest='code',
-                        action='store_true')
+    parser.add_argument('--pycode',
+                        dest='pycode',
+                        action='store_true',
+                        help='Show generated python code')
 
     return parser.parse_args()
 
-
-
-def _setup_logger(args):
-    if not logger.handlers:  # if no handlers, add a new one (console)
+def setup_logger(args):
+    if not LOGGER.handlers:  # if no handlers, add a new one (console)
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.DEBUG)
         console_handler.setFormatter(
             logging.Formatter('%(asctime)s | %(levelname)-8s| %(message)s')
         )
-        logger.addHandler(console_handler)
+        LOGGER.addHandler(console_handler)
 
     if args.quiet:
-        logger.setLevel(logging.CRITICAL)
+        LOGGER.setLevel(logging.CRITICAL)
     else:
         if args.verbose:
-            logger.setLevel(logging.DEBUG)
+            LOGGER.setLevel(logging.DEBUG)
         else:
-            logger.setLevel(logging.WARN)
+            LOGGER.setLevel(logging.WARN)
 
     # capture_warnings
     logging.captureWarnings(True)
     pywarnings = logging.getLogger('py.warnings')
-    pywarnings.handlers.extend(logger.handlers)
+    pywarnings.handlers.extend(LOGGER.handlers)
 
+def _preprocess_expressions(exprs):
+    actions = []
+    variables = set()
+    used_variables = set()
 
-def try_to_write_to_tmp_py_file(data):
+    group = 1
+    prev_type = ActionTypes.stream
+    
+    stream_markers = {'stream'}
+    element_markers = {'line'}
+
+    for expr in exprs:
+        if not expr:
+            continue
+
+        tokens = to_tokens(expr)
+        def_names, used_names, _ = get_names(tokens)
+        variables |= def_names
+        used_variables |= used_names
+        warns = []
+
+        has_stream_marker = (def_names | used_names) & stream_markers
+        has_element_marker = (def_names | used_names) & element_markers
+        if has_stream_marker:
+            current_type = ActionTypes.stream
+        elif has_element_marker:
+            current_type = ActionTypes.element
+        else:
+            current_type = prev_type
+
+        if current_type != prev_type and actions:
+            group += 1
+
+        LOGGER.debug('action: %r, warns=%r, type=%s, group=%r, def_names=%r', 
+                     expr, warns, current_type, group, def_names)
+        actions.append(Action(expr, warns, current_type, group))
+        prev_type = current_type
+
+    return actions, variables, used_variables
+
+def _codegen(actions, variables: set, used_variables: set, modules: set) -> str:
+    if not actions:
+        return ''
+    variables = ", ".join(sorted(variables - {'stream', 'line'}))
+    modules = sorted(modules | DEFAULT_MODULES & used_variables | {'sys'})
+    lines = []
+
+    for module in modules:
+        lines.append('import {module}'.format(module=module))
+    lines.append('')
+
+    prev_type = ActionTypes.stream
+    prev_group = 0
+    transforations = deque()
+
+    for action in actions:
+        if prev_group < action.group:
+            if prev_group:
+                if prev_type == ActionTypes.element:
+                    lines.append('        yield line\n')
+                elif prev_type == ActionTypes.stream:
+                    lines.append('    return stream\n')
+                else:
+                    raise RuntimeError('unexpected!')
+            func_prefix = 'transform' if action.type == ActionTypes.stream else 'process'
+            func_name = '{func_prefix}{action.group}'.format(action=action, func_prefix=func_prefix)
+            lines.append('def {func_name}(stream):'.format(func_name=func_name))
+            transforations.appendleft(func_name)
+            if variables:
+                lines.append('    global {variables}'.format(variables=variables))
+            if action.type == ActionTypes.element:
+                lines.append('    for line in stream:')
+
+        if action.type == ActionTypes.element:
+            lines.append('        {action.string}'.format(action=action))
+        elif action.type == ActionTypes.stream:
+            lines.append('    {action.string}'.format(action=action))
+        else:
+            raise RuntimeError('unexpected!')
+
+        prev_type = action.type
+        prev_group = action.group
+
+    if prev_type == ActionTypes.element:
+        lines.append('        yield line\n')
+    elif prev_type == ActionTypes.stream:
+        lines.append('    return stream\n')
+    else:
+        raise RuntimeError('unexpected!')
+
+    lines.append('if __name__ == "__main__":')
+    if transforations:
+        lines.append('    stream = (line.rstrip("\\r\\n") for line in sys.stdin if line)')
+        funcs = '('.join(transforations) + '(stream' + ')' * len(transforations)
+        lines.append('    stream = {funcs}'.format(funcs=funcs))
+        lines.append('    for line in stream: pass')
+
+    return '\n'.join(lines)
+
+def _try_to_write_to_tmp_py_file(data):
     try:
-        with tempfile.NamedTemporaryFile(suffix='.py',prefix='go',delete=False) as fp:
+        with tempfile.NamedTemporaryFile(prefix='py3_', delete=False) as fp:
             fp.write(data.encode('utf-8'))
         return fp.name
-    except Exception:
+    except Exception as exc:
+        LOGGER.debug('write to tmp.py error: %s', exc)
         return None
 
+def execute(code):
+    exit_code = 0
+    try:
+        name = _try_to_write_to_tmp_py_file(code) or "<string>"
+        LOGGER.debug('write to tmp.py: %s', name)
+        try:
+            exec(compile(code, name, 'exec'), globals())
+        except Exception:
+            etype, exc, tb = sys.exc_info()
+            tb_offset = 1
+            try:
+                import IPython.core.ultratb
+                itb = IPython.core.ultratb.VerboseTB(include_vars=False)
+                trace_text = itb.text(etype, exc, tb, tb_offset=tb_offset)
+            except Exception as exc2:
+                LOGGER.debug('exec() error handler extension: %s', exc2)
+                trace = ['Traceback (most recent call last):\n']
+                trace += traceback.extract_tb(tb).format()[tb_offset:]
+                trace += traceback.format_exception_only(etype, exc)
+                trace_text = ''.join(trace)
+                trace_text = trace_text.replace(name, "<string>")
+            LOGGER.error(trace_text)
+            exit_code = 1
+    finally:
+        if os.path.exists(name):
+            LOGGER.debug('remove tmp.py: %s', name)
+            os.unlink(name)
+    return exit_code
 
 def main():
     args = parseargs()
-    _setup_logger(args)
-    logger.debug('arguments: %r', args)
+    setup_logger(args)
+    LOGGER.debug('arguments: %r', args)
 
     expressions = [
         z.strip() for x in args.expressions
         for z in x.split(';') if z.strip()]
-    modules = [
-        z.strip() for x in args.modules
-        for z in x.split(',') if z.strip()]
+    modules = set()
 
-    actions, variables = _preprocess_expressions(expressions)
-    code = _codegen(actions, variables, modules)
+    actions, variables, used_variables = _preprocess_expressions(expressions)
+    code = _codegen(actions, variables, used_variables, modules)
 
-    if args.code:
+    if args.pycode:
         print(code)
     else:
-        exit_code = 0
-        try:
-            name = try_to_write_to_tmp_py_file(code) or "<string>"
-            try:
-                exec(compile(code, name, 'exec'), globals())
-            except Exception:
-                etype, exc, tb = sys.exc_info()
-                tb_offset = 1
-                try:
-                    import IPython.core.ultratb
-                    itb = IPython.core.ultratb.VerboseTB(include_vars=False)
-                    trace_text = itb.text(etype, exc, tb, tb_offset=tb_offset)
-                except:
-                    trace = ['Traceback (most recent call last):\n']
-                    trace += traceback.extract_tb(tb).format()[tb_offset:]
-                    trace += traceback.format_exception_only(etype,exc)
-                    trace_text = ''.join(trace)
-                    trace_text = trace_text.replace(name, "<string>")
-                logger.error(trace_text)
-                exit_code = 1
-        finally:
-            if os.path.exists(name):
-                os.unlink(name)
-        return (exit_code)
-
-
-def show_tokens(s):
-    pprint(to_tokens(s))
-
-# show_tokens('')
-# show_tokens('2')
-# show_tokens('q = 7')
-# show_tokens('q, w = 7, 8')
-# show_tokens('x == 7')
-# show_tokens('f()')
-# show_tokens('if 1: continue')
-# show_tokens('k += 11')
-# show_tokens('(k for x in stream for k in x)')
-
-# exec(_codegen(*_preprocess_expressions(['q = 7', 'w = 8', 'skip if x == q else x', 'x + w', 'sum(stream)', 'sum(stream)', 'x + w', 'w1, w2 = 7, 8', 'zz = 2'])))
+        return execute(code)
+    return 0
 
 
 if __name__ == '__main__':

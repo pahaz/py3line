@@ -1,4 +1,4 @@
-$ echo -e "1\n2\n3\n4\n5\n6" | ./py3line.py '(z for z in range(int(x)))'
+$ echo -e "1\n2\n3\n4\n5\n6" | ./py3line.py 'print(*[z for z in range(int(line))])'
 0
 0 1
 0 1 2
@@ -8,7 +8,7 @@ $ echo -e "1\n2\n3\n4\n5\n6" | ./py3line.py '(z for z in range(int(x)))'
 
 <EXITCODE=0>
 
-$ echo -e "1\n2\n3\n4\n5\n6" | ./py3line.py  # like cat!
+$ echo -e "1\n2\n3\n4\n5\n6" | ./py3line.py 'print(line)' # like cat!
 1
 2
 3
