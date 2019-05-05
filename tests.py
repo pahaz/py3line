@@ -131,7 +131,7 @@ PYCODE_TESTS = [
     PyCodeCase('-2.2', None, "Expr(value=UnaryOp(op=USub(), operand=Num(n=2.2)))"),
     PyCodeCase('"2"', None, "Expr(value=Str(s='2'))"),
     PyCodeCase('b"2"', None, "Expr(value=Bytes(s=b'2'))"),
-    PyCodeCase('f"sin({a}) is {sin(a):.3}"', SyntaxError, ""),
+    PyCodeCase('f"sin({a}) is {sin(a):.3}"', SyntaxError, "Expr(value=JoinedStr(values=[Str(s='sin('), FormattedValue(value=Name(id='a', ctx=Load()), conversion=-1, format_spec=None), Str(s=') is '), FormattedValue(value=Call(func=Name(id='sin', ctx=Load()), args=[Name(id='a', ctx=Load())], keywords=[]), conversion=-1, format_spec=JoinedStr(values=[Str(s='.3')]))]))"),
     PyCodeCase(r'r"\n"', None, r"Expr(value=Str(s='\\n'))"),
     PyCodeCase('[]', None, "Expr(value=List(elts=[], ctx=Load()))"),
     PyCodeCase('[1]', None, "Expr(value=List(elts=[Num(n=1)], ctx=Load()))"),
@@ -184,10 +184,10 @@ PYCODE_TESTS = [
     PyCodeCase('q, w = 7, 8', None, "Assign(targets=[Tuple(elts=[Name(id='q', ctx=Store()), Name(id='w', ctx=Store())], ctx=Store())], value=Tuple(elts=[Num(n=7), Num(n=8)], ctx=Load()))", assert_get_names=({'q', 'w'}, set(), set())),
     PyCodeCase('a, *b = it', None, "Assign(targets=[Tuple(elts=[Name(id='a', ctx=Store()), Starred(value=Name(id='b', ctx=Store()), ctx=Store())], ctx=Store())], value=Name(id='it', ctx=Load()))", assert_get_names=({'a', 'b'}, {'it'}, set())),
     PyCodeCase('a, ((c0, k2), c1, *b) = it', None, "Assign(targets=[Tuple(elts=[Name(id='a', ctx=Store()), Tuple(elts=[Tuple(elts=[Name(id='c0', ctx=Store()), Name(id='k2', ctx=Store())], ctx=Store()), Name(id='c1', ctx=Store()), Starred(value=Name(id='b', ctx=Store()), ctx=Store())], ctx=Store())], ctx=Store())], value=Name(id='it', ctx=Load()))"),
-    PyCodeCase('(a1): int = 1', SyntaxError, ""),
-    PyCodeCase('a2: int = 2', SyntaxError, ""),
-    PyCodeCase('c: int', SyntaxError, ""),
-    PyCodeCase('c.v: int', SyntaxError, ""),
+    PyCodeCase('(a1): int = 1', SyntaxError, "AnnAssign(target=Name(id='a1', ctx=Store()), annotation=Name(id='int', ctx=Load()), value=Num(n=1), simple=0)"),
+    PyCodeCase('a2: int = 2', SyntaxError, "AnnAssign(target=Name(id='a2', ctx=Store()), annotation=Name(id='int', ctx=Load()), value=Num(n=2), simple=1)"),
+    PyCodeCase('c: int', SyntaxError, "AnnAssign(target=Name(id='c', ctx=Store()), annotation=Name(id='int', ctx=Load()), value=None, simple=1)"),
+    PyCodeCase('c.v: int', SyntaxError, "AnnAssign(target=Attribute(value=Name(id='c', ctx=Load()), attr='v', ctx=Store()), annotation=Name(id='int', ctx=Load()), value=None, simple=0)"),
     PyCodeCase('del variable', None, "Delete(targets=[Name(id='variable', ctx=Del())])", assert_get_names=(set(), {'variable'}, set())),
     PyCodeCase('k += 11', None, "AugAssign(target=Name(id='k', ctx=Store()), op=Add(), value=Num(n=11))", assert_get_names=(set(), {'k'}, set())),
     PyCodeCase('k |= 11', None, "AugAssign(target=Name(id='k', ctx=Store()), op=BitOr(), value=Num(n=11))", assert_get_names=(set(), {'k'}, set())),
@@ -223,6 +223,11 @@ PYCODE_TESTS = [
     PyCodeCase('async while False: print(z)', SyntaxError, ""),
 ]
 
+
+def _dump(tokens):
+    # cros py3.5 py3.6
+    return ast.dump(tokens).replace(", is_async=0", "")
+
 # @pytest.mark.skip
 @pytest.mark.parametrize("case", PY3LINE_TESTS)
 def test_py3line_cases(case):
@@ -244,7 +249,7 @@ def test_py3line_cases(case):
 def test_pycode_cases(case):
     try:
         tokens = to_tokens(case.code)
-        assert ast.dump(tokens) == case.tokens
+        assert _dump(tokens) == case.tokens
     except Exception as exc:
         if type(exc) == case.exception:
             pass
