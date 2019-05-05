@@ -19,11 +19,13 @@ jobs:
             pip install check-manifest
             pip install Pygments
             pip install bashtest
+            pip install pytest
     - run:
         name: tests
         command: |
             python setup.py check -m -r -s
             python setup.py build
+            pytest -vv tests.py
             bashtest --exitcode test_*.bashtest
             bashtest README.rst
 
@@ -46,6 +48,7 @@ jobs:
               pip install check-manifest
               pip install Pygments
               pip install bashtest
+              pip install pytest
       - run:
           name: build Linux binary
           command: ./.circleci/linux_build.sh
