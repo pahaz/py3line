@@ -498,36 +498,21 @@ HELP
 
 ::
 
-    usage: py3line.py [-h] [-a action] [-p pre_action] [-o OUTPUT] [-i]
-                      [--in-place-suffix IS_INPLACE_SUFFIX] [-m MODULES] [-v] [-q]
-                      [--version]
-                      action [file [file ...]]
+    usage: py3line.py [-h] [-v] [-q] [--version] [--pycode]
+                      [expression [expression ...]]
 
-    Py3line is a UNIX command-line tool for line-based processing in Python with
-    regex and output transform features similar to grep, sed, and awk.
+    Py3line is a UNIX command-line tool for a simple text stream processing by the
+    Python one-liner scripts. Like grep, sed and awk.
 
     positional arguments:
-      action                <python_expression>
-      file                  Input file #default: stdin
+      expression     python comma separated expressions
 
     optional arguments:
-      -h, --help            show this help message and exit
-      -a action, --action action
-                            <python_expression>
-      -p pre_action, --pre-action pre_action
-                            <python_expression>
-      -o OUTPUT, --out OUTPUT, --output-file OUTPUT
-                            Output file #default: '-' for stdout
-      -i, --in-place        Output to editable file
-      --in-place-suffix IS_INPLACE_SUFFIX
-                            Output to editable file and provide a backup suffix
-                            for keeping a copy of the original file
-      -m MODULES, --modules MODULES
-                            for m in modules: import m #default: []
+      -h, --help     show this help message and exit
       -v, --verbose
       -q, --quiet
-      --version             Print the version string
-
+      --version      print the version string
+      --pycode       show generated python code
 
 .. _Pahaz White: https://github.com/pahaz/
 .. _py3line: https://pypi.python.org/pypi/py3line/

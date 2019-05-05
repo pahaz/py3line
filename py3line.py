@@ -121,7 +121,7 @@ def parseargs():
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('expressions',
                         metavar='expression', nargs='*',
-                        help='<python_expression>')
+                        help='python comma separated expressions')
 
     parser.add_argument('-v', '--verbose',
                         dest='verbose',
@@ -133,12 +133,12 @@ def parseargs():
     parser.add_argument('--version',
                         dest='version',
                         action='store_true',
-                        help='Print the version string')
+                        help='print the version string')
 
     parser.add_argument('--pycode',
                         dest='pycode',
                         action='store_true',
-                        help='Show generated python code')
+                        help='show generated python code')
 
     return parser.parse_args()
 
