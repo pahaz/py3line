@@ -6,6 +6,7 @@ import subprocess
 import shlex
 import os.path
 from pathlib import Path
+import re
 
 from py3line import to_tokens, get_names, Py3LineSyntaxError
 
@@ -13,6 +14,7 @@ Py3LineCase = lambda *args, full_check=True, code=0: namedtuple('Py3LineCase', '
 PyCodeCase = lambda *args, assert_get_names=None: namedtuple('PyCodePy3LineCase', 'code, exception, tokens, assert_get_names')(*args, assert_get_names)
 PY3LINE = './py3line.py'
 ROOT = Path(os.path.dirname(__file__))
+ANSI_ESCAPE = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
 
 PY3LINE_TESTS = [
     Py3LineCase(
@@ -236,7 +238,7 @@ def test_py3line_cases(case):
         command = 'cat {0} | {1} {2}'.format(f.name, PY3LINE, shlex.quote('; '.join(case.actions)))
         print(command)
         code, text = subprocess.getstatusoutput(command)
-        output = text.split('\n')
+        output = ANSI_ESCAPE.sub('', text).split('\n')
         if case.full_check:
             assert output == case.output
         else:

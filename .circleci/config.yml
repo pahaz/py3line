@@ -25,7 +25,7 @@ jobs:
         command: |
             python setup.py check -m -r -s
             python setup.py build
-            pytest -vv --color=no tests.py
+            pytest -vv tests.py
             bashtest --exitcode test_*.bashtest
             bashtest README.rst
 
