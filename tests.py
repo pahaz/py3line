@@ -55,7 +55,7 @@ PY3LINE_TESTS = [
     Py3LineCase(
         "line = len(line.split()); print(sum(stream), max(stream))".split(';'),
         "Here are\nsome\nwords for you.".split('\n'),
-        "    stream = transform2(process1(stream))\n    print(sum(stream), max(stream))\nValueError: max() arg is an empty sequence".split('\n'),
+        "stream = transform2(process1(stream))\nprint(sum(stream), max(stream))\nValueError: max() arg is an empty sequence".split('\n'),
         full_check=False, code=1),
     # echo -e "Here are\nsome\nwords for you." | ./py3line.py "line = len(line.split()); stream = list(stream); print(sum(stream), max(stream))"
     Py3LineCase(
@@ -243,7 +243,7 @@ def test_py3line_cases(case):
             assert output == case.output
         else:
             for line in case.output:
-                assert line in output
+                assert any(line in out for out in output)
         assert code == case.code
 
 # @pytest.mark.skip
