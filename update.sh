@@ -9,9 +9,14 @@ if [ "$num_git_changes" != "0" ]; then
     exit 1
 fi
 
-python3 setup.py build sdist upload
+python setup.py build sdist
 if [ "$?" != "0" ]; then
-    echo "build and upload problem"
+    echo "build problem"
+    exit 2
+fi
+twine upload dist/*
+if [ "$?" != "0" ]; then
+    echo "upload problem"
     exit 2
 fi
 
