@@ -150,7 +150,8 @@ if we want to calculate the maximum number of words in a line and the total numb
 We can see the ``empty sequence`` error. It throws because our ``stream`` generator is already empty. 
 And we can't find any max value on empty stream.
 
-### stream memorization ###
+stream memorization
+~~~~~~~~~~~~~~~~~~~
 
 We can solve it by converting the ``stream`` generator to a list of values in memory using python ``list(stream)`` function. ::
 
@@ -175,7 +176,8 @@ The example above can be represented as the following python code::
     stream = transform(process(stream))
     for line in stream: pass
 
-### evaluate on the fly ###
+evaluate on the fly
+~~~~~~~~~~~~~~~~~~~
 
 We can also solve it without putting the stream into memory. Just use the auxiliary variables where 
 we will place the calculated result in the process of processing the stream. ::
@@ -236,7 +238,8 @@ The example above can be represented as the following python code::
     stream = transform(process(stream))
     for line in stream: pass
 
-### python generator laziness ###
+python generator laziness
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Let's check python generator laziness. 
 Just run ``for line in stream: print(1);`` 
@@ -264,7 +267,8 @@ The example above can be represented as the following python code::
     stream = transform(stream)
     for line in stream: pass                  # (0 iterations)
 
-### work with a part of stream ###
+work with a part of stream
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 TODO ....
 
