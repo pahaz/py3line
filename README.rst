@@ -504,6 +504,7 @@ HELP
 
 ::
 
+    $ ./py3line.py --help
     usage: py3line.py [-h] [-v] [-q] [--version] [--pycode]
                       [expression [expression ...]]
 
