@@ -42,7 +42,7 @@ Installation
 
 or ::
 
-    sudo curl -L "https://43-63976011-gh.circle-artifacts.com/0/py3line-$(uname -s)-$(uname -m)" -o /usr/local/bin/py3line
+    sudo curl -L "https://61-63976011-gh.circle-artifacts.com/0/py3line-$(uname -s)-$(uname -m)" -o /usr/local/bin/py3line
     sudo chmod +x /usr/local/bin/py3line
 
 to have it installed in your environment.
