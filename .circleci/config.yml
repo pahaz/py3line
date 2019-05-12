@@ -18,7 +18,7 @@ jobs:
             pip install docutils
             pip install check-manifest
             pip install Pygments
-            pip install bashtest
+            pip install bashtest>=0.0.8
             pip install pytest
     - run:
         name: tests

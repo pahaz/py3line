@@ -89,7 +89,7 @@ You can also get the executed python code by ``--pycode`` argument.
 
 .. code-block:: bash
 
-    $ ./py3line.py "x = len(line.split(' ')); print(x, line)" --pycode
+    $ ./py3line.py "x = len(line.split(' ')); print(x, line)" --pycode  #skipbashtest
     ...
 
 Stream transform
@@ -125,7 +125,7 @@ You can also get the executed python code by ``--pycode`` argument.
 
 .. code-block:: bash
 
-    $ ./py3line.py "line = len(line.split()); print(sum(stream))" --pycode
+    $ ./py3line.py "line = len(line.split()); print(sum(stream))" --pycode  #skipbashtest
     ...
 
 Lazy as possible
@@ -138,7 +138,7 @@ But it also imposes limitations on the ability to work with the data flow.
 You cannot use multiple aggregation functions at the same time. For example, 
 if we want to calculate the maximum number of words in a line and the total number of words in a whole file at the same time.::
 
-    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "line = len(line.split()); print(sum(stream)); print(max(stream))"
+    $ echo -e "Here are\nsome\nwords for you." | ./py3line.py "line = len(line.split()); print(sum(stream)); print(max(stream))"  #skipbashtest
     6
     2019-05-05 14:55:09,353 | ERROR   | Traceback (most recent call last):
       File "<string>", line 15, in <module>
@@ -423,6 +423,8 @@ Or just ``cat ./testsuit/test.txt | ./py3line.py "stream = enumerate(stream); pr
     []
     []
 
+.. code-block:: bash
+
     # Find all three letter words + skip empty lists
     cat ./testsuit/test.txt | ./py3line.py "line = re.findall(r'\b\w\w\w\b', line); if not line: continue; print(line)"
     ['cat']
@@ -440,7 +442,7 @@ Or just ``cat ./testsuit/test.txt | ./py3line.py "stream = enumerate(stream); pr
 .. code-block:: bash
 
     # cat ./testsuit/test.txt | ./py3line.py "line = re.search(r' is ([A-Z]\w*)', line); if not line: continue; line.group(1)"
-    $ cat ./testsuit/test.txt | ./py3line.py "rgx = re.compile(r' is ([A-Z]\w*)'); rgx.search(x) or skip; x.group(1)"
+    $ cat ./testsuit/test.txt | ./py3line.py "rgx = re.compile(r' is ([A-Z]\w*)'); line = rgx.search(line); if not line: continue; print(line.group(1))"
     Betty
     Frank
     George
