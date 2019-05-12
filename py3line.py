@@ -16,7 +16,7 @@ import argparse
 import tempfile
 import traceback
 
-__version__ = '0.3.0'
+__version__ = '0.3.1'
 NAME = 'py3line'
 LOGGER = logging.getLogger(NAME)
 DEFAULT_MODULES = {
@@ -316,6 +316,8 @@ def main():
 
     if args.pycode:
         print(code)
+    elif args.version:
+        print(__version__)
     else:
         return execute(code)
     return 0

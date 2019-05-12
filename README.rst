@@ -521,6 +521,11 @@ HELP
       --version      print the version string
       --pycode       show generated python code
 
+::
+
+    $ ./py3line.py --version
+    0.3.1
+
 .. _Pahaz White: https://github.com/pahaz/
 .. _py3line: https://pypi.python.org/pypi/py3line/
 .. _pyp: https://pypi.python.org/pypi/pyp/
